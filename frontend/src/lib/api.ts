@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 
-const DEFAULT_BASE = 'http://localhost:8000';
+// Default to same-origin to avoid CORS when served behind the backend
+const DEFAULT_BASE = '';
 
 const baseUrl = (() => {
   if (browser) {
