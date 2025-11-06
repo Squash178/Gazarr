@@ -33,7 +33,9 @@ COPY --from=frontend_builder /app/build ./static
 
 RUN adduser --disabled-password --gecos "" gazarr \
     && mkdir -p /app/data \
-    && chown -R gazarr:gazarr /app
+    && mkdir -p /app/covers \
+    && chown -R gazarr:gazarr /app \
+    && chmod 0777 /app/covers
 
 USER gazarr
 
