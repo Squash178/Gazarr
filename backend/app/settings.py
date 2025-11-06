@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     downloads_dir: Optional[Path] = Field(default=Path("/downloads"), description="Directory to monitor for completed SABnzbd downloads.")
     library_dir: Optional[Path] = Field(default=Path("/library"), description="Destination for processed downloads.")
     staging_dir: Optional[Path] = Field(default=Path("/staging"), description="Temporary processing area before moving downloads into the library.")
-    covers_dir: Optional[Path] = Field(default=Path("data/covers"), description="Directory for generated cover thumbnails.")
+    covers_dir: Optional[Path] = Field(default=Path("/app/covers"), description="Directory for generated cover thumbnails.")
     downloads_poll_interval: float = Field(default=10.0, description="Polling interval for the download monitor (seconds).")
     downloads_settle_seconds: float = Field(default=30.0, description="Time without changes before a download is considered complete.")
     download_tracker_poll_interval: float = Field(default=10.0, description="Polling interval for SABnzbd download status updates (seconds).")
