@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container>
   <Name>Gazarr</Name>
-  <Repository>ghcr.io/Squash178/gazarr:main</Repository>
+  <Repository>ghcr.io/squash178/gazarr:main</Repository>
   <Registry>https://ghcr.io</Registry>
   <Network>bridge</Network>
   <MyIP/>
