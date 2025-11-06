@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  gazarr:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        - PUBLIC_API_BASE=/
+    container_name: gazarr
+    restart: unless-stopped
+    environment:
+      - GAZARR_DATABASE_URL=sqlite:///data/app.db
+      - GAZARR_TORZNAB_TIMEOUT=15
+      - GAZARR_DOWNLOADS_DIR=/downloads
+      - GAZARR_LIBRARY_DIR=/library
+      - GAZARR_STAGING_DIR=/staging
+      - GAZARR_DOWNLOADS_POLL_INTERVAL=5
+      - GAZARR_DOWNLOADS_SETTLE_SECONDS=15
+      - GAZARR_DOWNLOAD_TRACKER_POLL_INTERVAL=10
+      - GAZARR_DOWNLOAD_TRACKER_HISTORY_LIMIT=50
+    volumes:
+      - ./data/backend:/app/data
+      - ./downloads:/downloads
+      - ./library:/library
+      - ./staging:/staging
+    ports:
+      - "8000:8000"
+

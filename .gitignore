@@ -1,0 +1,61 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment & secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.crt
+*.p12
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+ENV/
+.pdm.toml
+poetry.lock
+
+# Node / Frontend
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+frontend/.vite/
+frontend/dist/
+node_modules/
+
+# Coverage / Reports / Logs
+coverage/
+.coverage*
+*.log
+logs/
+
+# Databases & Local Data
+*.db
+*.sqlite*
+
+# Project data and personal content
+# These contain local/stateful or personal files and should not be versioned
+data/
+downloads/
+library/
+staging/
+
+# Docker overrides (keep base files tracked)
+docker-compose.override.yml
+*.local.yml
+
+# Misc
+*.bak
+*.tmp
+~$*
+

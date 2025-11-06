@@ -1,0 +1,1069 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import {
+    api,
+    type Provider,
+    type Magazine,
+    type SearchResult,
+    type SabnzbdStatus,
+    type SabnzbdConfig,
+    type DownloadQueueEntry,
+    type TrackedDownload
+  } from '$lib/api';
+
+  const LANGUAGES = [
+    { code: 'en', label: 'English' },
+    { code: 'de', label: 'Deutsch' }
+  ];
+
+  const TABS = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'downloads', label: 'Downloads' },
+    { id: 'settings', label: 'Settings' }
+  ] as const;
+
+  type TabId = (typeof TABS)[number]['id'];
+  let activeTab: TabId = 'overview';
+
+  let providers: Provider[] = [];
+  let magazines: Magazine[] = [];
+  let searchResults: SearchResult[] = [];
+  let visibleResults: SearchResult[] = [];
+  let activeFilters: string[] = [];
+  let sabnzbdStatus: SabnzbdStatus | null = null;
+  let sabnzbdConfig: SabnzbdConfig | null = null;
+  let sabnzbdEnabled = false;
+  let sabnzbdTesting = false;
+  let sabnzbdSaving = false;
+  let loadingSabnzbd = false;
+  let downloadQueue: DownloadQueueEntry[] = [];
+  let trackedDownloads: TrackedDownload[] = [];
+  let downloadsEnabled = false;
+  let loadingDownloads = false;
+  let downloadsTimer: ReturnType<typeof setInterval> | null = null;
+
+  let loadingProviders = false;
+  let loadingMagazines = false;
+  let isSearching = false;
+
+  let toast: { type: 'success' | 'error'; message: string } | null = null;
+  let queueingDownloads = new Set<string>();
+
+  $: visibleResults = activeFilters.length ? searchResults.filter(matchesFilters) : [...searchResults];
+
+  const providerForm = {
+    name: '',
+    base_url: '',
+    api_key: '',
+    download_types: 'M',
+    enabled: true
+  };
+
+  const magazineForm = {
+    title: '',
+    regex: '',
+    language: 'en'
+  };
+
+  const sabnzbdForm = {
+    base_url: '',
+    api_key: '',
+    category: '',
+    priority: '',
+    timeout: ''
+  };
+
+  const resetProviderForm = () => {
+    providerForm.name = '';
+    providerForm.base_url = '';
+    providerForm.api_key = '';
+    providerForm.download_types = 'M';
+    providerForm.enabled = true;
+  };
+
+  const resetMagazineForm = () => {
+    magazineForm.title = '';
+    magazineForm.regex = '';
+    magazineForm.language = 'en';
+  };
+
+  async function withToast<T>(fn: () => Promise<T>, successMessage: string) {
+    try {
+      await fn();
+      toast = { type: 'success', message: successMessage };
+    } catch (err) {
+      toast = {
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Unexpected error'
+      };
+      throw err;
+    } finally {
+      setTimeout(() => {
+        toast = null;
+      }, 4200);
+    }
+  }
+
+  async function loadProviders() {
+    loadingProviders = true;
+    try {
+      providers = await api.getProviders();
+    } finally {
+      loadingProviders = false;
+    }
+  }
+
+  async function loadMagazines() {
+    loadingMagazines = true;
+    try {
+      magazines = await api.getMagazines();
+    } finally {
+      loadingMagazines = false;
+    }
+  }
+
+  async function loadSabnzbdConfig() {
+    loadingSabnzbd = true;
+    try {
+      sabnzbdConfig = await api.getSabnzbdConfig();
+      sabnzbdForm.base_url = sabnzbdConfig.base_url ?? '';
+      sabnzbdForm.api_key = sabnzbdConfig.api_key ?? '';
+      sabnzbdForm.category = sabnzbdConfig.category ?? '';
+      sabnzbdForm.priority = sabnzbdConfig.priority === null || sabnzbdConfig.priority === undefined ? '' : String(sabnzbdConfig.priority);
+      sabnzbdForm.timeout = sabnzbdConfig.timeout === null || sabnzbdConfig.timeout === undefined ? '' : String(sabnzbdConfig.timeout);
+    } catch (err) {
+      console.error('Failed to load SABnzbd config', err);
+      sabnzbdConfig = null;
+    } finally {
+      loadingSabnzbd = false;
+    }
+  }
+
+  async function loadSabnzbdStatus() {
+    try {
+      sabnzbdStatus = await api.getSabnzbdStatus();
+    } catch (err) {
+      console.error('Failed to load SABnzbd status', err);
+      sabnzbdStatus = { enabled: false, base_url: null, category: null };
+    }
+  }
+
+  async function loadDownloads() {
+    loadingDownloads = true;
+    try {
+      const response = await api.getDownloadQueue();
+      downloadsEnabled = response.enabled;
+      downloadQueue = response.entries;
+      trackedDownloads = response.jobs ?? [];
+    } catch (err) {
+      console.error('Failed to load download queue', err);
+      downloadsEnabled = false;
+      downloadQueue = [];
+      trackedDownloads = [];
+    } finally {
+      loadingDownloads = false;
+    }
+  }
+
+  async function loadAll() {
+    await Promise.all([loadProviders(), loadMagazines(), loadSabnzbdConfig(), loadSabnzbdStatus()]);
+  }
+
+  onMount(() => {
+    loadAll();
+    loadDownloads();
+    downloadsTimer = setInterval(() => {
+      if (!loadingDownloads) {
+        loadDownloads();
+      }
+    }, 10000);
+    return () => {
+      if (downloadsTimer) {
+        clearInterval(downloadsTimer);
+        downloadsTimer = null;
+      }
+    };
+  });
+
+  $: sabnzbdEnabled =
+    sabnzbdStatus?.enabled ?? Boolean((sabnzbdConfig?.base_url ?? '').length && (sabnzbdConfig?.api_key ?? '').length);
+
+  function formatDate(value: string | null) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? '—' : date.toLocaleString();
+  }
+
+  function formatSize(size: number | null) {
+    if (!size) return '—';
+    const mb = size / 1_048_576;
+    return `${mb.toFixed(mb > 100 ? 0 : 1)} MB`;
+  }
+
+  function formatJobStatus(status: string | null) {
+    if (!status) return '—';
+    const text = status.replace(/_/g, ' ').trim();
+    return text ? text[0].toUpperCase() + text.slice(1) : '—';
+  }
+
+  function formatProgress(value: number | null) {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      return '—';
+    }
+    return `${Math.round(value)}%`;
+  }
+
+  function matchesFilters(result: SearchResult) {
+    if (!activeFilters.length) {
+      return true;
+    }
+    const title = normalizeString(result.title);
+    const label = result.issue_label ? result.issue_label.toLowerCase() : '';
+    return activeFilters.some((filter) => {
+      const check = normalizeString(filter);
+      return title.includes(check) || label.includes(check);
+    });
+  }
+
+  function normalizeString(value: string) {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function setQueueing(link: string, active: boolean) {
+    const next = new Set(queueingDownloads);
+    if (active) {
+      next.add(link);
+    } else {
+      next.delete(link);
+    }
+    queueingDownloads = next;
+  }
+
+  function isQueueing(link: string) {
+    return queueingDownloads.has(link);
+  }
+
+  async function handleCreateProvider() {
+    await withToast(
+      async () => {
+        await api.createProvider({ ...providerForm });
+        await loadProviders();
+        resetProviderForm();
+      },
+      'Provider saved'
+    );
+  }
+
+  async function handleToggleProvider(provider: Provider) {
+    await withToast(
+      async () => {
+        await api.updateProvider(provider.id, { enabled: !provider.enabled });
+        await loadProviders();
+      },
+      `Provider ${provider.enabled ? 'disabled' : 'enabled'}`
+    );
+  }
+
+  async function handleDeleteProvider(provider: Provider) {
+    if (!confirm(`Remove provider "${provider.name}"?`)) return;
+    await withToast(
+      async () => {
+        await api.deleteProvider(provider.id);
+        await loadProviders();
+      },
+      'Provider removed'
+    );
+  }
+
+  async function handleCreateMagazine() {
+    await withToast(
+      async () => {
+        await api.createMagazine({ ...magazineForm, regex: magazineForm.regex || null });
+        await loadMagazines();
+        resetMagazineForm();
+      },
+      'Magazine saved'
+    );
+  }
+
+  async function handleToggleMagazineStatus(magazine: Magazine) {
+    const nextStatus = magazine.status === 'active' ? 'paused' : 'active';
+    await withToast(
+      async () => {
+        await api.updateMagazine(magazine.id, { status: nextStatus });
+        await loadMagazines();
+      },
+      `Magazine ${nextStatus === 'active' ? 'activated' : 'paused'}`
+    );
+  }
+
+  async function handleDeleteMagazine(magazine: Magazine) {
+    if (!confirm(`Delete "${magazine.title}"? This cannot be undone.`)) return;
+    await withToast(
+      async () => {
+        await api.deleteMagazine(magazine.id);
+        await loadMagazines();
+      },
+      'Magazine removed'
+    );
+  }
+
+  async function handleLanguageChange(magazine: Magazine, language: string) {
+    if (language === magazine.language) {
+      return;
+    }
+    await withToast(
+      async () => {
+        await api.updateMagazine(magazine.id, { language });
+        magazine.language = language;
+        await loadMagazines();
+      },
+      'Magazine language updated'
+    );
+  }
+
+  async function handleSearch(titles?: string[]) {
+    activeFilters = titles ?? [];
+    isSearching = true;
+    try {
+      searchResults = await api.runSearch(titles);
+      toast = { type: 'success', message: `Search returned ${searchResults.length} results` };
+      setTimeout(() => (toast = null), 4200);
+    } catch (err) {
+      toast = { type: 'error', message: err instanceof Error ? err.message : 'Search failed' };
+    } finally {
+      isSearching = false;
+    }
+  }
+
+  async function handleRefreshDownloads() {
+    if (loadingDownloads) {
+      return;
+    }
+    await loadDownloads();
+  }
+
+  async function handleDownload(result: SearchResult) {
+    if (!sabnzbdEnabled) {
+      toast = {
+        type: 'error',
+        message: 'Configure SABnzbd to enable downloads.'
+      };
+      setTimeout(() => {
+        toast = null;
+      }, 4200);
+      return;
+    }
+
+    const link = result.link;
+    setQueueing(link, true);
+    const title = result.title?.trim();
+    const metadata = {
+      magazine_title: result.magazine_title ?? title ?? null,
+      issue_code: result.issue_code ?? null,
+      issue_label: result.issue_label ?? null,
+      issue_year: result.issue_year ?? null,
+      issue_month: result.issue_month ?? null,
+      issue_number: result.issue_number ?? null
+    };
+    const hasMetadata = Object.values(metadata).some((value) => value !== null && value !== undefined);
+
+    const payload = {
+      link,
+      title: title ? title : undefined,
+      metadata: hasMetadata ? metadata : undefined
+    };
+
+    try {
+      const response = await api.enqueueSabnzbdDownload(payload);
+      toast = {
+        type: 'success',
+        message: response.message ?? 'Request queued in SABnzbd'
+      };
+    } catch (err) {
+      toast = {
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to send download to SABnzbd'
+      };
+    } finally {
+      setQueueing(link, false);
+      setTimeout(() => {
+        toast = null;
+      }, 4200);
+    }
+  }
+
+  async function handleSaveSabnzbd() {
+    sabnzbdSaving = true;
+    const priorityInput = sabnzbdForm.priority.trim();
+    const timeoutInput = sabnzbdForm.timeout.trim();
+    const priorityValue = priorityInput === '' ? null : Number(priorityInput);
+    const timeoutValue = timeoutInput === '' ? null : Number(timeoutInput);
+
+    const payload = {
+      base_url: sabnzbdForm.base_url.trim() ? sabnzbdForm.base_url.trim() : null,
+      api_key: sabnzbdForm.api_key.trim() ? sabnzbdForm.api_key.trim() : null,
+      category: sabnzbdForm.category.trim() ? sabnzbdForm.category.trim() : null,
+      priority: priorityValue !== null && Number.isNaN(priorityValue) ? null : priorityValue,
+      timeout: timeoutValue !== null && Number.isNaN(timeoutValue) ? null : timeoutValue
+    };
+
+    try {
+      await withToast(
+        async () => {
+          await api.updateSabnzbdConfig(payload);
+          await Promise.all([loadSabnzbdConfig(), loadSabnzbdStatus()]);
+        },
+        'SABnzbd settings saved'
+      );
+    } finally {
+      sabnzbdSaving = false;
+    }
+  }
+
+  async function handleTestSabnzbd() {
+    sabnzbdTesting = true;
+    try {
+      await withToast(
+        async () => {
+          await api.testSabnzbd();
+          await loadSabnzbdStatus();
+        },
+        'SABnzbd connection looks good'
+      );
+    } catch (err) {
+      // toast helper already surfaced the error message
+    } finally {
+      sabnzbdTesting = false;
+    }
+  }
+</script>
+
+<main style="max-width: 1180px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem;">
+  <header class="surface" style="margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem;">
+      <div>
+        <div class="badge">alpha preview</div>
+        <h1 style="margin-top: 0.35rem; font-size: clamp(2.4rem, 4vw, 3.2rem); font-weight: 700;">
+          Gazarr Dashboard
+        </h1>
+        <p style="max-width: 640px; color: rgba(226, 232, 240, 0.72); line-height: 1.55;">
+          Manage your Torznab providers, curate active magazines, and trigger quick searches — all in one glassy
+          interface built just for magazines.
+        </p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 0.6rem; min-width: 180px; align-items: flex-end;">
+        <button type="button" class="btn-primary" on:click={() => handleSearch()} disabled={isSearching}>
+          {#if isSearching}
+            <span
+              style="width: 0.85rem; height: 0.85rem; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: spin 0.9s linear infinite;"
+            ></span>
+            Scanning...
+          {:else}
+            🔍 Run global search
+          {/if}
+        </button>
+        <small style="color: rgba(226, 232, 240, 0.52); letter-spacing: 0.08em; text-transform: uppercase;">
+          API base: {import.meta.env.PUBLIC_API_BASE ?? 'http://localhost:8000'}
+        </small>
+        <small style="color: rgba(226, 232, 240, 0.52); letter-spacing: 0.08em; text-transform: uppercase;">
+          SABnzbd: {sabnzbdEnabled ? 'Connected' : 'Not configured'}
+        </small>
+      </div>
+    </div>
+  </header>
+
+  {#if toast}
+    <div
+      class="card"
+      style="
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.5rem;
+        border-color: rgba(74, 222, 128, 0.35);
+        background: rgba(34, 197, 94, 0.15);
+        color: rgba(240, 253, 244, 0.92);
+      "
+    >
+      <strong>{toast.type === 'success' ? 'Success' : 'Heads up'}</strong>
+      <span>{toast.message}</span>
+    </div>
+  {/if}
+
+  <nav class="tab-nav">
+    {#each TABS as tab}
+      <button
+        type="button"
+        class="tab-button {tab.id === activeTab ? 'is-active' : ''}"
+        on:click={() => (activeTab = tab.id)}
+      >
+        {tab.label}
+      </button>
+    {/each}
+  </nav>
+
+  {#if activeTab === 'overview'}
+    <section class="surface" style="margin-bottom: 2rem;">
+      <div class="section-header">
+        <div>
+          <h2 style="margin: 0; font-size: 1.25rem;">Magazines</h2>
+          <p style="margin: 0.4rem 0 0; color: rgba(226, 232, 240, 0.6);">
+            {magazines.filter((m) => m.status === 'active').length} active · {magazines.length} total
+          </p>
+        </div>
+        <button type="button" class="btn-primary" on:click={handleCreateMagazine} disabled={loadingMagazines}>
+          + Add magazine
+        </button>
+      </div>
+
+      <div style="display: grid; gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="input-field">
+          <label for="magazine-title">Title</label>
+          <input id="magazine-title" bind:value={magazineForm.title} placeholder="eg. Linux Format" />
+        </div>
+        <div class="input-field">
+          <label for="magazine-regex">Custom search term (optional)</label>
+          <input id="magazine-regex" bind:value={magazineForm.regex} placeholder="Override search keyword" />
+        </div>
+        <div class="input-field">
+          <label for="magazine-language">Language</label>
+          <select id="magazine-language" bind:value={magazineForm.language}>
+            {#each LANGUAGES as option}
+              <option value={option.code}>{option.label}</option>
+            {/each}
+          </select>
+        </div>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Search</th>
+              <th>Language</th>
+              <th>Status</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#if loadingMagazines}
+              <tr>
+                <td colspan="5">Loading magazines…</td>
+              </tr>
+            {:else if magazines.length === 0}
+              <tr>
+                <td colspan="5">Add a magazine title to kick off your library.</td>
+              </tr>
+            {:else}
+              {#each magazines as magazine}
+                <tr>
+                  <td style="font-weight: 600; overflow-wrap: anywhere; word-break: break-word;">{magazine.title}</td>
+                  <td style="font-size: 0.85rem; color: rgba(226, 232, 240, 0.7); overflow-wrap: anywhere; word-break: break-word;">
+                    {magazine.regex ?? '—'}
+                  </td>
+                  <td>
+                    <select
+                      bind:value={magazine.language}
+                      on:change={(event) =>
+                        handleLanguageChange(magazine, (event.target as HTMLSelectElement).value)
+                      }
+                    >
+                      {#each LANGUAGES as option}
+                        <option value={option.code}>{option.label}</option>
+                      {/each}
+                    </select>
+                  </td>
+                  <td>
+                    <span class="chip {magazine.status === 'active' ? 'success' : 'warning'}">
+                      {magazine.status}
+                    </span>
+                  </td>
+                  <td style="text-align: right;">
+                    <button
+                      type="button"
+                      class="btn-primary"
+                      style="padding: 0.45rem 1.1rem;"
+                      on:click={() => handleToggleMagazineStatus(magazine)}
+                    >
+                      {magazine.status === 'active' ? 'Pause' : 'Activate'}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-primary"
+                      style="margin-left: 0.5rem; padding: 0.45rem 1.1rem;"
+                      on:click={() => handleSearch([magazine.title])}
+                    >
+                      Search
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-primary"
+                      style="margin-left: 0.5rem; padding: 0.45rem 1.1rem; background: rgba(248, 113, 113, 0.22); color: rgba(255, 255, 255, 0.85);"
+                      on:click={() => handleDeleteMagazine(magazine)}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              {/each}
+            {/if}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="surface">
+      <div class="section-header">
+        <div>
+          <h2 style="margin: 0; font-size: 1.25rem;">Latest search results</h2>
+          <p style="margin: 0.4rem 0 0; color: rgba(226, 232, 240, 0.6);">
+            {#if visibleResults.length}
+              Displaying {visibleResults.length} release{visibleResults.length === 1 ? '' : 's'}
+              {#if activeFilters.length}
+                filtered to <strong>{activeFilters.join(', ')}</strong>
+                {#if visibleResults.length !== searchResults.length}
+                  (from {searchResults.length} total)
+                {/if}
+              {/if}
+            {:else if searchResults.length}
+              No releases matched the current filter.
+            {:else}
+              Run a search to populate this table.
+            {/if}
+          </p>
+        </div>
+        <button type="button" class="btn-primary" on:click={() => handleSearch()} disabled={isSearching}>
+          {#if activeFilters.length}
+            {isSearching ? 'Refreshing…' : 'Clear filter'}
+          {:else}
+            {isSearching ? 'Searching…' : 'Refresh results'}
+          {/if}
+        </button>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Release</th>
+              <th>Issue</th>
+              <th>Provider</th>
+              <th>Size</th>
+              <th>Published</th>
+              <th>Categories</th>
+              <th style="text-align: right;">Download</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#if isSearching}
+              <tr>
+                <td colspan="7">Searching providers…</td>
+              </tr>
+            {:else if searchResults.length === 0}
+              <tr>
+                <td colspan="7">No results yet.</td>
+              </tr>
+            {:else if visibleResults.length === 0}
+              <tr>
+                <td colspan="7">No results matched the current filter.</td>
+              </tr>
+            {:else}
+              {#each visibleResults as result}
+                <tr>
+                  <td style="font-weight: 600; max-width: 320px; overflow-wrap: anywhere; word-break: break-word;">
+                    {result.title}
+                  </td>
+                  <td style="white-space: nowrap; color: rgba(226, 232, 240, 0.8);">
+                    {result.issue_label ?? '—'}
+                  </td>
+                  <td>{result.provider}</td>
+                  <td>{formatSize(result.size)}</td>
+                  <td>{formatDate(result.published)}</td>
+                  <td>
+                    <div class="pill-group">
+                      {#each result.categories as cat}
+                        <span class="chip">{cat}</span>
+                      {/each}
+                    </div>
+                  </td>
+                  <td style="text-align: right;">
+                    <button
+                      type="button"
+                      class="btn-primary"
+                      style="padding: 0.45rem 1.1rem; display: inline-flex; align-items: center; gap: 0.35rem;"
+                      on:click={() => handleDownload(result)}
+                      disabled={isQueueing(result.link)}
+                      title={sabnzbdEnabled ? 'Send to SABnzbd' : 'Configure SABnzbd to enable downloads'}
+                    >
+                      {#if isQueueing(result.link)}
+                        <span
+                          style="width: 0.75rem; height: 0.75rem; border: 2px solid rgba(255,255,255,0.25); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: spin 0.9s linear infinite;"
+                        ></span>
+                        Sending…
+                      {:else}
+                        Download
+                      {/if}
+                    </button>
+                  </td>
+                </tr>
+              {/each}
+            {/if}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  {:else if activeTab === 'downloads'}
+
+    <section class="surface" style="margin-bottom: 2rem;">
+      <div class="section-header">
+        <div>
+          <h2 style="margin: 0; font-size: 1.25rem;">Download queue</h2>
+          <p style="margin: 0.4rem 0 0; color: rgba(226, 232, 240, 0.6);">
+            {#if downloadsEnabled}
+              {#if downloadQueue.length}
+                Watching {downloadQueue.length} item{downloadQueue.length === 1 ? '' : 's'} for completion.
+              {:else}
+                Monitoring the downloads folder for new items.
+              {/if}
+            {:else}
+              Configure download and library directories to enable monitoring.
+            {/if}
+          </p>
+        </div>
+        <button type="button" class="btn-primary" on:click={handleRefreshDownloads} disabled={loadingDownloads}>
+          {loadingDownloads ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+
+      {#if !downloadsEnabled}
+        <p style="margin: 0; color: rgba(226, 232, 240, 0.7);">
+          Set <code>GAZARR_DOWNLOADS_DIR</code> and <code>GAZARR_LIBRARY_DIR</code> (or update via settings) to enable the queue.
+        </p>
+      {:else}
+        {#if trackedDownloads.length}
+          <h3 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: rgba(226, 232, 240, 0.8);">
+            Tracked downloads
+          </h3>
+          <div style="overflow-x: auto; margin-bottom: 1.25rem;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Stage</th>
+                  <th>SAB status</th>
+                  <th>Progress</th>
+                  <th>Remaining</th>
+                  <th>Updated</th>
+                  <th>Message</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each trackedDownloads as job}
+                  <tr>
+                    <td style="font-weight: 600; max-width: 320px; overflow-wrap: anywhere; word-break: break-word;">
+                      {job.clean_name ?? job.title ?? job.content_name ?? job.sabnzbd_id ?? '—'}
+                    </td>
+                    <td>{formatJobStatus(job.status)}</td>
+                    <td>{job.sab_status ?? '—'}</td>
+                    <td>{formatProgress(job.progress)}</td>
+                    <td>{job.time_remaining ?? '—'}</td>
+                    <td>{formatDate(job.updated_at)}</td>
+                    <td style="max-width: 280px; color: rgba(226, 232, 240, 0.78);">
+                      {job.message ?? '—'}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+
+        {#if loadingDownloads && downloadQueue.length === 0 && trackedDownloads.length === 0}
+          <p style="margin: 0; color: rgba(226, 232, 240, 0.7);">Loading current downloads…</p>
+        {:else if downloadQueue.length === 0}
+          <p style="margin: 0; color: rgba(226, 232, 240, 0.7);">
+            {trackedDownloads.length ? 'Downloads are still processing in SABnzbd.' : 'No active downloads detected.'}
+          </p>
+        {:else}
+          <div style="overflow-x: auto;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Size</th>
+                  <th>Last modified</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each downloadQueue as entry}
+                  <tr>
+                    <td style="font-weight: 600; max-width: 320px; overflow-wrap: anywhere; word-break: break-word;">
+                      {entry.name}
+                    </td>
+                    <td style="text-transform: capitalize;">{entry.type === 'directory' ? 'Folder' : 'File'}</td>
+                    <td>{formatSize(entry.size)}</td>
+                    <td>{formatDate(entry.modified)}</td>
+                    <td>
+                      <span class="chip {entry.ready ? 'success' : 'warning'}">
+                        {entry.ready ? 'Ready to move' : 'Waiting for files'}
+                      </span>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      {/if}
+    </section>
+
+  {:else}
+
+    <section class="surface" style="margin-bottom: 2rem;">
+      <div class="section-header">
+        <div>
+          <h2 style="margin: 0; font-size: 1.25rem;">SABnzbd connection</h2>
+          <p style="margin: 0.4rem 0 0; color: rgba(226, 232, 240, 0.6);">
+            {sabnzbdEnabled
+              ? `Connected to ${sabnzbdStatus?.base_url ?? sabnzbdConfig?.base_url ?? '—'}`
+              : 'Provide your SABnzbd base URL and API key to enable one-click downloads.'}
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.6rem;">
+          <button
+            type="button"
+            class="btn-primary"
+            on:click={handleTestSabnzbd}
+            disabled={sabnzbdTesting || loadingSabnzbd}
+          >
+            {sabnzbdTesting ? 'Testing…' : 'Test connection'}
+          </button>
+          <button
+            type="button"
+            class="btn-primary"
+            on:click={handleSaveSabnzbd}
+            disabled={sabnzbdSaving || loadingSabnzbd}
+          >
+            {sabnzbdSaving ? 'Saving…' : 'Save settings'}
+          </button>
+        </div>
+      </div>
+
+      {#if loadingSabnzbd}
+        <p style="margin: 0; color: rgba(226, 232, 240, 0.7);">Loading SABnzbd settings…</p>
+      {:else}
+        <div class="grid" style="gap: 1rem; margin-top: 1rem;">
+          <div class="input-field">
+            <label for="sab-base">Base URL</label>
+            <input
+              id="sab-base"
+              bind:value={sabnzbdForm.base_url}
+              placeholder="http://localhost:8080/sabnzbd"
+              disabled={sabnzbdSaving || loadingSabnzbd}
+            />
+          </div>
+          <div class="input-field">
+            <label for="sab-key">API key</label>
+            <input
+              id="sab-key"
+              bind:value={sabnzbdForm.api_key}
+              placeholder="Paste SABnzbd API key"
+              disabled={sabnzbdSaving || loadingSabnzbd}
+            />
+          </div>
+          <div class="input-field">
+            <label for="sab-category">Category (optional)</label>
+            <input
+              id="sab-category"
+              bind:value={sabnzbdForm.category}
+              placeholder="Magazines"
+              disabled={sabnzbdSaving || loadingSabnzbd}
+            />
+          </div>
+          <div class="input-field">
+            <label for="sab-priority">Priority (optional)</label>
+            <input
+              id="sab-priority"
+              type="number"
+              bind:value={sabnzbdForm.priority}
+              min="-1"
+              max="2"
+              disabled={sabnzbdSaving || loadingSabnzbd}
+            />
+          </div>
+          <div class="input-field">
+            <label for="sab-timeout">Timeout (seconds)</label>
+            <input
+              id="sab-timeout"
+              type="number"
+              bind:value={sabnzbdForm.timeout}
+              min="1"
+              max="180"
+              disabled={sabnzbdSaving || loadingSabnzbd}
+            />
+          </div>
+        </div>
+        <small style="display: block; margin-top: 0.75rem; color: rgba(226, 232, 240, 0.52);">
+          Leave fields blank to clear them. Environment defaults (if provided) seed the initial values.
+        </small>
+      {/if}
+    </section>
+
+    <section class="surface" style="margin-bottom: 2rem;">
+      <div class="section-header">
+        <div>
+          <h2 style="margin: 0; font-size: 1.25rem;">Providers</h2>
+          <p style="margin: 0.4rem 0 0; color: rgba(226, 232, 240, 0.6);">
+            Currently tracking {providers.length} provider{providers.length === 1 ? '' : 's'}.
+          </p>
+        </div>
+        <button type="button" class="btn-primary" on:click={handleCreateProvider} disabled={loadingProviders}>
+          + Add provider
+        </button>
+      </div>
+
+      <div style="display: grid; gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="grid" style="gap: 1rem;">
+          <div class="input-field">
+            <label for="provider-name">Name</label>
+            <input id="provider-name" bind:value={providerForm.name} placeholder="eg. Prowlarr" />
+          </div>
+          <div class="input-field">
+            <label for="provider-url">Base URL</label>
+            <input id="provider-url" bind:value={providerForm.base_url} placeholder="https://prow.example/api" />
+          </div>
+          <div class="input-field">
+            <label for="provider-key">API key</label>
+            <input id="provider-key" bind:value={providerForm.api_key} placeholder="Paste API key" />
+          </div>
+          <div class="input-field">
+            <label for="provider-types">Download types</label>
+            <input id="provider-types" bind:value={providerForm.download_types} placeholder="M,E" />
+          </div>
+        </div>
+        <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer;">
+          <input type="checkbox" bind:checked={providerForm.enabled} />
+          Enabled by default
+        </label>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Base URL</th>
+              <th>Status</th>
+              <th>Download types</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#if loadingProviders}
+              <tr>
+                <td colspan="5">Loading providers…</td>
+              </tr>
+            {:else if providers.length === 0}
+              <tr>
+                <td colspan="5">Add your first provider to get started.</td>
+              </tr>
+            {:else}
+              {#each providers as provider}
+                <tr>
+                  <td style="font-weight: 600; overflow-wrap: anywhere; word-break: break-word;">{provider.name}</td>
+                  <td style="font-size: 0.85rem; color: rgba(226, 232, 240, 0.7); overflow-wrap: anywhere; word-break: break-word;">
+                    {provider.base_url}
+                  </td>
+                  <td>
+                    <span class="chip {provider.enabled ? 'success' : 'warning'}">
+                      {provider.enabled ? 'Enabled' : 'Paused'}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="pill-group">
+                      {#each provider.download_types.split(',') as type}
+                        <span class="chip">{type.trim()}</span>
+                      {/each}
+                    </div>
+                  </td>
+                  <td style="text-align: right;">
+                    <button
+                      type="button"
+                      class="btn-primary"
+                      style="padding: 0.45rem 1.1rem;"
+                      on:click={() => handleToggleProvider(provider)}
+                    >
+                      {provider.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-primary"
+                      style="margin-left: 0.5rem; padding: 0.45rem 1.1rem; background: rgba(248, 113, 113, 0.22); color: rgba(255, 255, 255, 0.85);"
+                      on:click={() => handleDeleteProvider(provider)}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              {/each}
+            {/if}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  {/if}
+</main>
+
+<style>
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .tab-nav {
+    display: inline-flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    background: rgba(15, 23, 42, 0.35);
+    padding: 0.45rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+  }
+
+  .tab-button {
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    background: rgba(148, 163, 184, 0.14);
+    color: rgba(226, 232, 240, 0.78);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.45rem 1.2rem;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+
+  .tab-button:hover {
+    background: rgba(148, 163, 184, 0.22);
+    border-color: rgba(148, 163, 184, 0.42);
+  }
+
+  .tab-button.is-active {
+    background: rgba(59, 130, 246, 0.28);
+    border-color: rgba(96, 165, 250, 0.6);
+    color: rgba(255, 255, 255, 0.95);
+  }
+</style>

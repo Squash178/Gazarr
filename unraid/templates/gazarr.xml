@@ -1,0 +1,117 @@
+<?xml version="1.0"?>
+<Container>
+  <Name>Gazarr</Name>
+  <Repository>ghcr.io/Squash178/gazarr:main</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Squash178/Gazarr</Support>
+  <Project>https://github.com/Squash178/Gazarr</Project>
+  <Overview>Gazarr - Single-container app (FastAPI backend + embedded frontend). Exposes port 8000. Configure paths to your Unraid shares.</Overview>
+  <Category>Productivity: Tools</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/Squash178/Gazarr/main/unraid/icon.png</Icon>
+  <ExtraParams></ExtraParams>
+  <DateInstalled/>
+  <Beta>false</Beta>
+  <DonateText/>
+  <DonateLink/>
+  <Description>Gazarr provides magazine search, SABnzbd integration and library management. This Unraid template runs a single container exposing the web UI on port 8000.</Description>
+  <Networking>
+    <Mode>bridge</Mode>
+    <Publish>
+      <Port>
+        <HostPort>8000</HostPort>
+        <ContainerPort>8000</ContainerPort>
+        <Protocol>tcp</Protocol>
+        <Description>Web UI</Description>
+      </Port>
+    </Publish>
+  </Networking>
+  <Data>
+    <Volume>
+      <HostDir>/mnt/user/appdata/gazarr/backend</HostDir>
+      <ContainerDir>/app/data</ContainerDir>
+      <Mode>rw</Mode>
+      <Description>App data (SQLite DB, settings)</Description>
+    </Volume>
+    <Volume>
+      <HostDir>/mnt/user/downloads</HostDir>
+      <ContainerDir>/downloads</ContainerDir>
+      <Mode>rw</Mode>
+      <Description>Downloads (completed)</Description>
+    </Volume>
+    <Volume>
+      <HostDir>/mnt/user/library</HostDir>
+      <ContainerDir>/library</ContainerDir>
+      <Mode>rw</Mode>
+      <Description>Library root for processed issues</Description>
+    </Volume>
+    <Volume>
+      <HostDir>/mnt/user/staging</HostDir>
+      <ContainerDir>/staging</ContainerDir>
+      <Mode>rw</Mode>
+      <Description>Optional staging area</Description>
+    </Volume>
+  </Data>
+  <Environment>
+    <Variable>
+      <Name>GAZARR_DATABASE_URL</Name>
+      <Value>sqlite:///data/app.db</Value>
+      <Mode/> 
+      <Description>Database URL</Description>
+    </Variable>
+    <Variable>
+      <Name>GAZARR_TORZNAB_TIMEOUT</Name>
+      <Value>15</Value>
+      <Mode/>
+      <Description>Torznab timeout (seconds)</Description>
+    </Variable>
+    <Variable>
+      <Name>GAZARR_DOWNLOADS_DIR</Name>
+      <Value>/downloads</Value>
+      <Mode/>
+      <Description>Path to SABnzbd completed downloads</Description>
+    </Variable>
+    <Variable>
+      <Name>GAZARR_LIBRARY_DIR</Name>
+      <Value>/library</Value>
+      <Mode/>
+      <Description>Path to library root</Description>
+    </Variable>
+    <Variable>
+      <Name>GAZARR_STAGING_DIR</Name>
+      <Value>/staging</Value>
+      <Mode/>
+      <Description>Optional staging dir</Description>
+    </Variable>
+    <Variable>
+      <Name>GAZARR_DOWNLOADS_POLL_INTERVAL</Name>
+      <Value>5</Value>
+      <Mode/>
+      <Description>Download monitor poll interval (seconds)</Description>
+    </Variable>
+    <Variable>
+      <Name>GAZARR_DOWNLOADS_SETTLE_SECONDS</Name>
+      <Value>15</Value>
+      <Mode/>
+      <Description>Wait time for file settling (seconds)</Description>
+    </Variable>
+    <Variable>
+      <Name>GAZARR_DOWNLOAD_TRACKER_POLL_INTERVAL</Name>
+      <Value>10</Value>
+      <Mode/>
+      <Description>Download tracker poll interval (seconds)</Description>
+    </Variable>
+    <Variable>
+      <Name>GAZARR_DOWNLOAD_TRACKER_HISTORY_LIMIT</Name>
+      <Value>50</Value>
+      <Mode/>
+      <Description>Download tracker history length</Description>
+    </Variable>
+  </Environment>
+</Container>
+
+

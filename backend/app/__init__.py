@@ -1,0 +1,2 @@
+"""Gazarr backend application package."""
+
