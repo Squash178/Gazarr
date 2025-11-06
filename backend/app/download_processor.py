@@ -2,8 +2,10 @@ import logging
 import os
 import re
 import shutil
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
+from xml.sax.saxutils import escape as xml_escape
 
 import fitz  # type: ignore[import]
 from pypdf import PdfReader, PdfWriter
@@ -36,12 +38,20 @@ def process_download_entry(
         raise FileNotFoundError(f"Staging path does not exist: {staging_path}")
 
     magazine_language = "en"
+    issue_year: Optional[int] = None
+    issue_month: Optional[int] = None
+    issue_number: Optional[int] = None
+    issue_label: Optional[str] = None
     with Session(engine) as session:
         job = session.get(DownloadJob, job_id)
         if not job:
             raise ValueError(f"No download job found for id {job_id}")
 
         magazine_language = _resolve_magazine_language(session, job)
+        issue_year = job.issue_year
+        issue_month = job.issue_month
+        issue_number = job.issue_number
+        issue_label = job.issue_label
         magazine_folder, sanitized_name, metadata_title, series_name, series_index = _derive_issue_artifacts(job)
 
         update_download_job_status(
@@ -85,6 +95,10 @@ def process_download_entry(
                 series_name=series_name,
                 series_index=series_index,
                 language=magazine_language,
+                issue_label=issue_label,
+                issue_year=issue_year,
+                issue_month=issue_month,
+                issue_number=issue_number,
             )
             if thumbnail_path is None:
                 cover_path = cover_dir / f"{sanitized_name}.jpg"
@@ -154,26 +168,130 @@ def _strip_and_apply_metadata(
     series_name: Optional[str],
     series_index: Optional[str],
     language: str,
+    issue_label: Optional[str] = None,
+    issue_year: Optional[int] = None,
+    issue_month: Optional[int] = None,
+    issue_number: Optional[int] = None,
 ) -> None:
+    author = series_name or None
+    subject = issue_label
+    info_subject = subject or clean_title
+
+    # 1) Re-write the PDF to strip existing metadata and set standard Info keys only
     reader = PdfReader(str(pdf_path))
     writer = PdfWriter()
     for page in reader.pages:
         writer.add_page(page)
 
-    metadata = {"/Title": clean_title}
-    if series_name:
-        metadata["/calibre:series"] = series_name
-    if series_index:
-        metadata["/calibre:series_index"] = series_index
-    if language:
-        metadata["/calibre:language"] = language
-
-    writer.add_metadata(metadata)
+    # Only set standard PDF Info fields (avoid custom /calibre:* keys)
+    info_metadata = {"/Title": clean_title}
+    if author:
+        info_metadata["/Author"] = author
+    if info_subject:
+        info_metadata["/Subject"] = info_subject
+    writer.add_metadata(info_metadata)
 
     temp_path = pdf_path.with_suffix(".tmp.pdf")
     with temp_path.open("wb") as temp_file:
         writer.write(temp_file)
     temp_path.replace(pdf_path)
+
+    # 2) Apply XMP metadata (dc:title, dc:language) using PyMuPDF for broad compatibility
+    try:
+        doc = fitz.open(str(pdf_path))
+        # Update standard info title as well (some readers prioritize this field)
+        try:
+            current_meta = dict(doc.metadata or {})
+            current_meta["title"] = clean_title
+            if author:
+                current_meta["author"] = author
+            if info_subject:
+                current_meta["subject"] = info_subject
+            doc.set_metadata(current_meta)
+        except Exception:
+            # Non-fatal; continue to set XMP
+            logger.debug("Unable to set PyMuPDF metadata dict for %s", pdf_path)
+
+        lang = (language or "en").strip() or "en"
+        title_xml = xml_escape(clean_title, {"'": "&apos;", '"': "&quot;"})
+        lang_xml = xml_escape(lang, {"'": "&apos;", '"': "&quot;"})
+        author_xml = xml_escape(author, {"'": "&apos;", '"': "&quot;"}) if author else None
+        subject_xml = xml_escape(subject, {"'": "&apos;", '"': "&quot;"}) if subject else None
+        series_xml = xml_escape(series_name, {"'": "&apos;", '"': "&quot;"}) if series_name else None
+        series_index_value = _normalise_series_index(
+            raw_series_index=series_index,
+            issue_year=issue_year,
+            issue_month=issue_month,
+            issue_number=issue_number,
+        )
+        series_index_xml = (
+            xml_escape(series_index_value, {"'": "&apos;", '"': "&quot;"})
+            if series_index_value is not None
+            else None
+        )
+
+        # Minimal XMP packet with Dublin Core + Calibre extensions when available
+        description_lines = [
+            "      <dc:title>",
+            "        <rdf:Alt>",
+            f"          <rdf:li xml:lang='x-default'>{title_xml}</rdf:li>",
+            "        </rdf:Alt>",
+            "      </dc:title>",
+            "      <dc:language>",
+            "        <rdf:Bag>",
+            f"          <rdf:li>{lang_xml}</rdf:li>",
+            "        </rdf:Bag>",
+            "      </dc:language>",
+        ]
+        if author_xml:
+            description_lines.extend(
+                [
+                    "      <dc:creator>",
+                    "        <rdf:Seq>",
+                    f"          <rdf:li>{author_xml}</rdf:li>",
+                    "        </rdf:Seq>",
+                    "      </dc:creator>",
+                    f"      <pdf:Author>{author_xml}</pdf:Author>",
+                ]
+            )
+        if subject_xml:
+            description_lines.extend(
+                [
+                    "      <dc:subject>",
+                    "        <rdf:Bag>",
+                    f"          <rdf:li>{subject_xml}</rdf:li>",
+                    "        </rdf:Bag>",
+                    "      </dc:subject>",
+                    "      <dc:description>",
+                    "        <rdf:Alt>",
+                    f"          <rdf:li xml:lang='x-default'>{subject_xml}</rdf:li>",
+                    "        </rdf:Alt>",
+                    "      </dc:description>",
+                ]
+            )
+        if series_xml:
+            description_lines.append(f"      <calibre:series>{series_xml}</calibre:series>")
+        if series_index_xml:
+            description_lines.append(f"      <calibre:series_index>{series_index_xml}</calibre:series_index>")
+
+        description_block = "\n".join(description_lines)
+
+        xmp_packet = f"""
+<?xpacket begin='\ufeff' id='W5M0MpCehiHzreSzNTczkc9d'?>
+<x:xmpmeta xmlns:x='adobe:ns:meta/'>
+  <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' xmlns:dc='http://purl.org/dc/elements/1.1/' xmlns:pdf='http://ns.adobe.com/pdf/1.3/' xmlns:calibre='http://calibre.kovidgoyal.net/2009/metadata'>
+    <rdf:Description rdf:about=''>
+{description_block}
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end='w'?>"""
+        doc.set_xml_metadata(xmp_packet)
+        doc.saveIncr()
+        doc.close()
+    except Exception:
+        # XMP application is best-effort; keep the PDF even if XMP fails
+        logger.exception("Failed applying XMP metadata to %s", pdf_path)
 
 
 def _generate_thumbnail(pdf_path: Path, output_path: Path) -> Optional[Path]:
@@ -240,6 +358,55 @@ def _derive_issue_artifacts(job: DownloadJob) -> Tuple[str, str, str, str, Optio
 
     series_name = magazine
     return magazine_folder, sanitized_name, metadata_title, series_name, series_index
+
+
+def _normalise_series_index(
+    *,
+    raw_series_index: Optional[str],
+    issue_year: Optional[int],
+    issue_month: Optional[int],
+    issue_number: Optional[int],
+) -> Optional[str]:
+    def _format_decimal(value: Decimal) -> str:
+        try:
+            quantized = value.quantize(Decimal("0.01"))
+        except InvalidOperation:
+            quantized = value
+        text = format(quantized.normalize(), "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return text
+
+    if issue_number is not None:
+        return _format_decimal(Decimal(issue_number))
+
+    if issue_year is not None:
+        if issue_month is not None:
+            try:
+                combined = Decimal(issue_year) + (Decimal(issue_month) / Decimal(100))
+                return _format_decimal(combined)
+            except InvalidOperation:
+                pass
+        return str(issue_year)
+
+    if raw_series_index:
+        cleaned = raw_series_index.strip()
+        if cleaned.isdigit():
+            if len(cleaned) >= 6:
+                year_part = cleaned[:4]
+                month_part = cleaned[4:6]
+                try:
+                    combined = Decimal(year_part) + (Decimal(month_part) / Decimal(100))
+                    return _format_decimal(combined)
+                except InvalidOperation:
+                    pass
+            try:
+                return _format_decimal(Decimal(cleaned))
+            except InvalidOperation:
+                return cleaned
+        return cleaned or None
+
+    return None
 
 
 def _build_series_index(job: DownloadJob) -> Optional[str]:

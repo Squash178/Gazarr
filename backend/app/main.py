@@ -1,5 +1,8 @@
-from datetime import datetime, timezone
+import binascii
 import logging
+import secrets
+from base64 import b64decode
+from datetime import datetime, timezone
 from typing import List, Optional
 from pathlib import Path
 
@@ -8,6 +11,9 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 from sqlmodel import Session
 
 from .database import get_session, init_db
@@ -72,6 +78,56 @@ app.add_middleware(
 )
 
 logger = logging.getLogger(__name__)
+
+
+class BasicAuthMiddleware(BaseHTTPMiddleware):
+    """Global HTTP Basic authentication enforced for every request, including static files."""
+
+    def __init__(self, app, *, username: str, password: str, realm: str = "Gazarr") -> None:
+        super().__init__(app)
+        self._username = username
+        self._password = password
+        self._realm = realm
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        header = request.headers.get("Authorization")
+        if not header or not header.startswith("Basic "):
+            return self._challenge()
+        token = header.split(" ", 1)[1]
+        try:
+            decoded = b64decode(token, validate=True).decode("utf-8")
+        except (binascii.Error, ValueError, UnicodeDecodeError):
+            return self._challenge()
+        username, sep, password = decoded.partition(":")
+        if not sep:
+            return self._challenge()
+        if not (secrets.compare_digest(username, self._username) and secrets.compare_digest(password, self._password)):
+            return self._challenge()
+        return await call_next(request)
+
+    def _challenge(self) -> Response:
+        return Response(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            headers={"WWW-Authenticate": f'Basic realm="{self._realm}"'},
+        )
+
+
+def _configure_basic_auth(app: FastAPI) -> None:
+    settings = get_settings()
+    username = settings.auth_username
+    password = settings.auth_password
+    if not username or not password:
+        raise RuntimeError(
+            "Basic authentication requires both GAZARR_AUTH_USERNAME and GAZARR_AUTH_PASSWORD environment variables."
+        )
+    realm = settings.app_name or "Gazarr"
+    app.add_middleware(BasicAuthMiddleware, username=username, password=password, realm=realm)
+
+
+_configure_basic_auth(app)
 
 
 def _setup_download_monitor() -> Optional[DownloadMonitor]:
