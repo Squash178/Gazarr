@@ -25,7 +25,8 @@ RUN pip install --no-cache-dir --upgrade pip \
     && rm -rf /root/.cache/pip
 
 COPY backend/app ./app
-COPY backend/.env.example .env
+# Create a default .env (values can be overridden at runtime)
+RUN printf "# generated at build time\n" > .env
 
 # Copy built frontend into the backend image
 COPY --from=frontend_builder /app/build ./static
