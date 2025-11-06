@@ -6,7 +6,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/${{ toLower(github.repository_owner) }}/gazarr
+  IMAGE_NAME: ghcr.io/squash178/gazarr
   FRONTEND_PUBLIC_API_BASE: /
 
 jobs:
