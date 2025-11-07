@@ -236,6 +236,7 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   getDownloadQueue: () => request<DownloadQueueResponse>('/downloads'),
+  deleteDownloadJob: (id: number) => request<void>(`/downloads/${id}`, { method: 'DELETE' }),
   clearDownloadJobs: () =>
     request<DownloadClearResponse>('/downloads', {
       method: 'DELETE'

@@ -17,7 +17,7 @@ from starlette.responses import Response
 from sqlmodel import Session
 
 from .database import engine, get_session, init_db
-from .models import AppConfig, Magazine, Provider, SabnzbdConfig
+from .models import AppConfig, DownloadJob, Magazine, Provider, SabnzbdConfig
 from .schemas import (
     HealthResponse,
     MagazineCreate,
@@ -72,6 +72,7 @@ from .services import (
     update_magazine,
     update_provider,
     clear_download_jobs,
+    delete_download_job,
     get_app_config,
     update_app_config,
 )
@@ -388,6 +389,14 @@ def list_downloads_endpoint(session: Session = Depends(get_session)) -> Download
 def clear_downloads_endpoint(session: Session = Depends(get_session)) -> DownloadClearResponse:
     cleared = clear_download_jobs(session)
     return DownloadClearResponse(cleared=cleared)
+
+
+@app.delete("/downloads/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_download_job_endpoint(job_id: int, session: Session = Depends(get_session)) -> None:
+    job = session.get(DownloadJob, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Download not found")
+    delete_download_job(session, job)
 
 
 @app.post("/auto-download/scan", response_model=AutoDownloadScanResponse)

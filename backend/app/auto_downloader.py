@@ -109,9 +109,9 @@ class AutoDownloader:
                     logger.debug("Auto downloader scan produced no search results.")
                     return 0
 
-            job_index = self._build_job_index(session)
-            guards = self._load_guards(session)
-            candidates = self._select_candidates(results, job_index, guards)
+                job_index = self._build_job_index(session)
+                guards = self._load_guards(session)
+                candidates = self._select_candidates(results, job_index, guards)
                 if not candidates:
                     logger.debug("Auto downloader found no candidates to enqueue.")
                     return 0

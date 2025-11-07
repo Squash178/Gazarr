@@ -663,3 +663,8 @@ def clear_download_jobs(session: Session) -> int:
             staging_removed,
         )
     return removed
+
+
+def delete_download_job(session: Session, job: DownloadJob) -> None:
+    session.delete(job)
+    session.commit()

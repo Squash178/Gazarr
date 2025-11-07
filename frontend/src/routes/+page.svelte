@@ -56,6 +56,7 @@
   let toast: { type: 'success' | 'error'; message: string } | null = null;
   let queueingDownloads = new Set<string>();
   let autoScanPending = false;
+  let removingJobs = new Set<number>();
   $: autoScanAvailable = appConfig?.auto_download_enabled ?? appConfigForm.auto_download_enabled;
 
   $: visibleResults = activeFilters.length ? searchResults.filter(matchesFilters) : [...searchResults];
@@ -445,6 +446,32 @@
       console.error('Failed to clear downloads', err);
     } finally {
       clearingDownloads = false;
+    }
+  }
+
+  async function handleDeleteDownloadJob(job: TrackedDownload) {
+    if (!job?.id || removingJobs.has(job.id)) {
+      return;
+    }
+    if (!confirm(`Remove "${job.clean_name ?? job.title ?? job.content_name ?? 'this download'}" from the log?`)) {
+      return;
+    }
+    const next = new Set(removingJobs);
+    next.add(job.id);
+    removingJobs = next;
+    try {
+      await api.deleteDownloadJob(job.id);
+      trackedDownloads = trackedDownloads.filter((item) => item.id !== job.id);
+    } catch (err) {
+      toast = {
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to remove download entry'
+      };
+      setTimeout(() => (toast = null), 4200);
+    } finally {
+      const updated = new Set(removingJobs);
+      updated.delete(job.id);
+      removingJobs = updated;
     }
   }
 
@@ -1122,6 +1149,7 @@
                   <th>Remaining</th>
                   <th>Updated</th>
                   <th>Message</th>
+                  <th style="text-align: right;">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1137,6 +1165,17 @@
                     <td>{formatDate(job.updated_at)}</td>
                     <td style="max-width: 280px; color: rgba(226, 232, 240, 0.78);">
                       {job.message ?? '—'}
+                    </td>
+                    <td style="text-align: right;">
+                      <button
+                        type="button"
+                        class="btn-primary"
+                        style="padding: 0.3rem 0.9rem; background: rgba(248, 113, 113, 0.25); color: #fee2e2;"
+                        on:click={() => handleDeleteDownloadJob(job)}
+                        disabled={removingJobs.has(job.id)}
+                      >
+                        {removingJobs.has(job.id) ? 'Removing…' : 'Remove'}
+                      </button>
                     </td>
                   </tr>
                 {/each}

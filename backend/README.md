@@ -62,6 +62,7 @@ When the directories are configured the backend spawns two background tasks on s
 - A SABnzbd tracker that polls the queue/history endpoints and records progress for each job so the UI can report intermediate stages (queued, downloading, processing, completed, moved).
 
 Use `GET /downloads` to inspect both the filesystem queue and the tracked SABnzbd jobs.
+The dashboard lets you clear the entire log or remove individual download entries if something gets stuck.
 
 ## Automatic downloads
 
