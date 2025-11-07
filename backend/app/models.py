@@ -66,6 +66,17 @@ class SabnzbdConfig(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
+class AppConfig(SQLModel, table=True):
+    """Global application settings editable from the UI."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    auto_download_enabled: bool = Field(default=False, description="Whether the background auto downloader runs.")
+    auto_download_interval: float = Field(default=900.0, description="Seconds between auto download scans.")
+    auto_download_max_results: int = Field(default=1, description="Max issues per magazine per scan.")
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
 class DownloadJob(SQLModel, table=True):
     """Tracks SABnzbd jobs and downstream processing stages."""
 

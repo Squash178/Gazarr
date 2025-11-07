@@ -169,6 +169,21 @@ export type AutoDownloadScanResponse = {
   message: string;
 };
 
+export type AppConfig = {
+  id: number;
+  auto_download_enabled: boolean;
+  auto_download_interval: number;
+  auto_download_max_results: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AppConfigPayload = {
+  auto_download_enabled?: boolean;
+  auto_download_interval?: number | null;
+  auto_download_max_results?: number | null;
+};
+
 export const api = {
   getProviders: () => request<Provider[]>('/providers'),
   createProvider: (payload: Partial<Provider>) =>
@@ -209,6 +224,12 @@ export const api = {
   triggerAutoDownloadScan: () =>
     request<AutoDownloadScanResponse>('/auto-download/scan', {
       method: 'POST'
+    }),
+  getAppConfig: () => request<AppConfig>('/app/config'),
+  updateAppConfig: (payload: AppConfigPayload) =>
+    request<AppConfig>('/app/config', {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
     }),
   getDownloadQueue: () => request<DownloadQueueResponse>('/downloads'),
   clearDownloadJobs: () =>

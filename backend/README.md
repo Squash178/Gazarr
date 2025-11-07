@@ -39,7 +39,7 @@ See the project level `docker-compose.yml` for a production-ready container usin
 
 ## SABnzbd integration
 
-Set the following environment variables (see `.env.example`) to enable SABnzbd connectivity:
+Set the following environment variables (see `.env.example`) to enable SABnzbd connectivity (they can be edited later in the UI):
 
 - `GAZARR_SABNZBD_URL` – base URL to your SABnzbd instance, e.g. `http://localhost:8080/sabnzbd`
 - `GAZARR_SABNZBD_API_KEY` – the API key from SABnzbd
@@ -65,13 +65,7 @@ Use `GET /downloads` to inspect both the filesystem queue and the tracked SABnzb
 
 ## Automatic downloads
 
-Gazarr can automatically look for new issues and enqueue them in SABnzbd. Set:
-
-- `GAZARR_AUTO_DOWNLOAD_ENABLED=true`
-- `GAZARR_AUTO_DOWNLOAD_INTERVAL=900`
-- `GAZARR_AUTO_DOWNLOAD_MAX_RESULTS=1`
-
-When enabled, a background task reuses the built-in Torznab search, filters out issues already downloading/in the library, and submits the best match to SABnzbd. If SABnzbd reports a failure for an issue, the next scan will try a different NZB for the same magazine.
+Gazarr can automatically look for new issues and enqueue them in SABnzbd. Use the **Settings → Auto downloader** panel in the dashboard to toggle the background job, adjust the scan interval, and limit how many issues are queued per magazine. (The `GAZARR_AUTO_DOWNLOAD_*` variables only seed the initial defaults.)
 
 Each magazine can also be given an “auto-download start” year and issue number from the dashboard. Gazarr will ignore any releases at or before that marker so you can seed the catalog at a known point (e.g. “start at 2023 issue #350”) without bulk-downloading older history.
 

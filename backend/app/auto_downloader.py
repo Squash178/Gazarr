@@ -60,6 +60,9 @@ class AutoDownloader:
             self._task = None
             logger.info("Stopped auto downloader.")
 
+    def update_config(self, config: AutoDownloadConfig) -> None:
+        self.config = config
+
     async def _run(self) -> None:
         try:
             while not self._stop_event.is_set():

@@ -11,8 +11,9 @@ import httpx
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, delete, select
 
-from .models import DownloadJob, Magazine, Provider, SabnzbdConfig
+from .models import AppConfig, DownloadJob, Magazine, Provider, SabnzbdConfig
 from .schemas import (
+    AppConfigUpdate,
     MagazineCreate,
     MagazineUpdate,
     ProviderCreate,
@@ -362,6 +363,37 @@ def get_sabnzbd_connection(session: Session, config: Optional[SabnzbdConfig] = N
         priority=config.priority,
         timeout=timeout,
     )
+
+
+def get_app_config(session: Session) -> AppConfig:
+    config = session.exec(select(AppConfig).limit(1)).first()
+    if config:
+        return config
+    settings = get_settings()
+    now = datetime.utcnow()
+    config = AppConfig(
+        auto_download_enabled=settings.auto_download_enabled,
+        auto_download_interval=settings.auto_download_interval,
+        auto_download_max_results=settings.auto_download_max_results,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return config
+
+
+def update_app_config(session: Session, payload: AppConfigUpdate) -> AppConfig:
+    config = get_app_config(session)
+    data = payload.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        setattr(config, key, value)
+    config.updated_at = datetime.utcnow()
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return config
 
 
 # Download jobs ----------------------------------------------------------------

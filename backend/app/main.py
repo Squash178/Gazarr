@@ -3,7 +3,7 @@ import logging
 import secrets
 from base64 import b64decode
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from pathlib import Path
 
 import httpx
@@ -16,8 +16,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 from sqlmodel import Session
 
-from .database import get_session, init_db
-from .models import Magazine, Provider, SabnzbdConfig
+from .database import engine, get_session, init_db
+from .models import AppConfig, Magazine, Provider, SabnzbdConfig
 from .schemas import (
     HealthResponse,
     MagazineCreate,
@@ -39,6 +39,8 @@ from .schemas import (
     SabnzbdStatus,
     SabnzbdTestResponse,
     AutoDownloadScanResponse,
+    AppConfigRead,
+    AppConfigUpdate,
 )
 from .settings import get_settings
 from .sabnzbd import (
@@ -70,6 +72,8 @@ from .services import (
     update_magazine,
     update_provider,
     clear_download_jobs,
+    get_app_config,
+    update_app_config,
 )
 
 app = FastAPI(title="Gazarr API")
@@ -165,17 +169,39 @@ def _setup_download_tracker() -> DownloadTracker:
     return tracker
 
 
-def _setup_auto_downloader() -> Optional[AutoDownloader]:
-    settings = get_settings()
-    if not settings.auto_download_enabled:
-        return None
-    config = AutoDownloadConfig(
-        poll_interval=settings.auto_download_interval,
-        max_results_per_magazine=settings.auto_download_max_results,
+def _setup_auto_downloader() -> Tuple[Optional[AutoDownloader], AppConfig]:
+    with Session(engine) as session:
+        app_config = get_app_config(session)
+    downloader: Optional[AutoDownloader] = None
+    if app_config.auto_download_enabled:
+        downloader = AutoDownloader(_auto_download_config_from_model(app_config))
+        downloader.start()
+    return downloader, app_config
+
+
+def _auto_download_config_from_model(config: AppConfig) -> AutoDownloadConfig:
+    interval = config.auto_download_interval or get_settings().auto_download_interval
+    max_results = config.auto_download_max_results or get_settings().auto_download_max_results
+    return AutoDownloadConfig(
+        poll_interval=interval,
+        max_results_per_magazine=max_results,
     )
-    downloader = AutoDownloader(config)
-    downloader.start()
-    return downloader
+
+
+async def _sync_auto_downloader_state(app: FastAPI, config: AppConfig) -> None:
+    downloader: Optional[AutoDownloader] = getattr(app.state, "auto_downloader", None)
+    if config.auto_download_enabled:
+        new_config = _auto_download_config_from_model(config)
+        if downloader:
+            downloader.update_config(new_config)
+        else:
+            downloader = AutoDownloader(new_config)
+            downloader.start()
+            app.state.auto_downloader = downloader
+    else:
+        if downloader:
+            await downloader.stop()
+            app.state.auto_downloader = None
 
 
 @app.on_event("startup")
@@ -189,12 +215,13 @@ async def startup_event() -> None:
         logger.info("Download monitor disabled (missing downloads or library directory).")
     tracker = _setup_download_tracker()
     app.state.download_tracker = tracker
-    downloader = _setup_auto_downloader()
+    downloader, app_config = _setup_auto_downloader()
+    app.state.auto_downloader = downloader
+    app.state.app_config = app_config
     if downloader:
-        app.state.auto_downloader = downloader
         logger.info("Auto downloader enabled.")
     else:
-        logger.info("Auto downloader disabled (set GAZARR_AUTO_DOWNLOAD_ENABLED=true to enable).")
+        logger.info("Auto downloader disabled in settings.")
 
 
 @app.on_event("shutdown")
@@ -295,6 +322,23 @@ def update_sabnzbd_config_endpoint(
     payload: SabnzbdConfigUpdate, session: Session = Depends(get_session)
 ) -> SabnzbdConfig:
     return update_sabnzbd_config(session, payload)
+
+
+@app.get("/app/config", response_model=AppConfigRead)
+def read_app_config_endpoint(session: Session = Depends(get_session)) -> AppConfig:
+    return get_app_config(session)
+
+
+@app.patch("/app/config", response_model=AppConfigRead)
+async def update_app_config_endpoint(
+    payload: AppConfigUpdate,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> AppConfig:
+    config = update_app_config(session, payload)
+    await _sync_auto_downloader_state(request.app, config)
+    request.app.state.app_config = config
+    return config
 
 
 @app.get("/sabnzbd/status", response_model=SabnzbdStatus)

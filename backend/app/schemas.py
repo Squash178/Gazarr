@@ -179,6 +179,27 @@ class SabnzbdConfigRead(SabnzbdConfigBase):
         from_attributes = True
 
 
+class AppConfigBase(BaseModel):
+    auto_download_enabled: bool = False
+    auto_download_interval: float = Field(default=900.0, ge=30, le=86400)
+    auto_download_max_results: int = Field(default=1, ge=1, le=10)
+
+
+class AppConfigUpdate(BaseModel):
+    auto_download_enabled: Optional[bool] = None
+    auto_download_interval: Optional[float] = Field(default=None, ge=30, le=86400)
+    auto_download_max_results: Optional[int] = Field(default=None, ge=1, le=10)
+
+
+class AppConfigRead(AppConfigBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class AutoDownloadScanResponse(BaseModel):
     started: bool = True
     enqueued: int = 0

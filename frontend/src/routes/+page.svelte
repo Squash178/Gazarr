@@ -9,7 +9,9 @@
     type SabnzbdConfig,
     type DownloadQueueEntry,
     type TrackedDownload,
-    type AutoDownloadScanResponse
+    type AutoDownloadScanResponse,
+    type AppConfig,
+    type AppConfigPayload
   } from '$lib/api';
 
   const LANGUAGES = [
@@ -37,6 +39,9 @@
   let sabnzbdTesting = false;
   let sabnzbdSaving = false;
   let loadingSabnzbd = false;
+  let appConfig: AppConfig | null = null;
+  let loadingAppConfig = false;
+  let savingAppConfig = false;
   let downloadQueue: DownloadQueueEntry[] = [];
   let trackedDownloads: TrackedDownload[] = [];
   let downloadsEnabled = false;
@@ -51,6 +56,7 @@
   let toast: { type: 'success' | 'error'; message: string } | null = null;
   let queueingDownloads = new Set<string>();
   let autoScanPending = false;
+  $: autoScanAvailable = appConfig?.auto_download_enabled ?? appConfigForm.auto_download_enabled;
 
   $: visibleResults = activeFilters.length ? searchResults.filter(matchesFilters) : [...searchResults];
 
@@ -80,6 +86,12 @@
     category: '',
     priority: '',
     timeout: ''
+  };
+
+  const appConfigForm = {
+    auto_download_enabled: false,
+    auto_download_interval: '',
+    auto_download_max_results: ''
   };
 
   const parseOptionalInt = (value: string) => {
@@ -172,6 +184,21 @@
     }
   }
 
+  async function loadAppConfig() {
+    loadingAppConfig = true;
+    try {
+      appConfig = await api.getAppConfig();
+      appConfigForm.auto_download_enabled = appConfig.auto_download_enabled;
+      appConfigForm.auto_download_interval = String(appConfig.auto_download_interval ?? '');
+      appConfigForm.auto_download_max_results = String(appConfig.auto_download_max_results ?? '');
+    } catch (err) {
+      console.error('Failed to load app config', err);
+      appConfig = null;
+    } finally {
+      loadingAppConfig = false;
+    }
+  }
+
   async function loadDownloads() {
     loadingDownloads = true;
     try {
@@ -190,7 +217,7 @@
   }
 
   async function loadAll() {
-    await Promise.all([loadProviders(), loadMagazines(), loadSabnzbdConfig(), loadSabnzbdStatus()]);
+    await Promise.all([loadProviders(), loadMagazines(), loadSabnzbdConfig(), loadSabnzbdStatus(), loadAppConfig()]);
   }
 
   onMount(() => {
@@ -535,6 +562,33 @@
       }, 4200);
     }
   }
+
+  async function handleSaveAppConfig() {
+    savingAppConfig = true;
+    try {
+      const intervalInput = appConfigForm.auto_download_interval.trim();
+      const maxInput = appConfigForm.auto_download_max_results.trim();
+      const intervalValue = intervalInput === '' ? undefined : Number(intervalInput);
+      const maxValue = maxInput === '' ? undefined : Number(maxInput);
+      const payload: AppConfigPayload = {
+        auto_download_enabled: appConfigForm.auto_download_enabled,
+        auto_download_interval: intervalValue !== undefined && Number.isFinite(intervalValue) ? intervalValue : undefined,
+        auto_download_max_results: maxValue !== undefined && Number.isFinite(maxValue) ? maxValue : undefined
+      };
+      await withToast(
+        async () => {
+          const updated = await api.updateAppConfig(payload);
+          appConfig = updated;
+          appConfigForm.auto_download_enabled = updated.auto_download_enabled;
+          appConfigForm.auto_download_interval = String(updated.auto_download_interval ?? '');
+          appConfigForm.auto_download_max_results = String(updated.auto_download_max_results ?? '');
+        },
+        'Auto-download settings saved'
+      );
+    } finally {
+      savingAppConfig = false;
+    }
+  }
 </script>
 
 <main style="max-width: 1180px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem;">
@@ -561,7 +615,13 @@
             🔍 Run global search
           {/if}
         </button>
-        <button type="button" class="btn-primary" on:click={handleAutoDownloadScan} disabled={autoScanPending}>
+        <button
+          type="button"
+          class="btn-primary"
+          on:click={handleAutoDownloadScan}
+          disabled={autoScanPending || !autoScanAvailable}
+          title={autoScanAvailable ? 'Run the auto downloader immediately' : 'Enable auto downloader in settings'}
+        >
           {#if autoScanPending}
             <span
               style="width: 0.85rem; height: 0.85rem; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: spin 0.9s linear infinite;"
@@ -812,6 +872,64 @@
           </tbody>
         </table>
       </div>
+    </section>
+
+    <section class="surface" style="margin-bottom: 2rem;">
+      <div class="section-header">
+        <div>
+          <h2 style="margin: 0; font-size: 1.25rem;">Auto downloader</h2>
+          <p style="margin: 0.4rem 0 0; color: rgba(226, 232, 240, 0.6);">
+            Toggle the background search loop and tune how often it runs.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn-primary"
+          on:click={handleSaveAppConfig}
+          disabled={savingAppConfig || loadingAppConfig}
+        >
+          {savingAppConfig ? 'Saving…' : 'Save auto-download'}
+        </button>
+      </div>
+
+      {#if loadingAppConfig}
+        <p style="margin: 0; color: rgba(226, 232, 240, 0.7);">Loading auto-download settings…</p>
+      {:else}
+        <div class="input-field">
+          <label style="display: flex; align-items: center; gap: 0.55rem;">
+            <input type="checkbox" bind:checked={appConfigForm.auto_download_enabled} />
+            Auto downloader enabled
+          </label>
+        </div>
+        <div class="grid" style="gap: 1rem; margin-top: 1rem;">
+          <div class="input-field">
+            <label for="auto-interval">Scan interval (seconds)</label>
+            <input
+              id="auto-interval"
+              type="number"
+              min="60"
+              step="30"
+              bind:value={appConfigForm.auto_download_interval}
+              placeholder="900"
+              disabled={!appConfigForm.auto_download_enabled}
+            />
+            <small>How long to wait between automatic scans.</small>
+          </div>
+          <div class="input-field">
+            <label for="auto-max">Max results per magazine</label>
+            <input
+              id="auto-max"
+              type="number"
+              min="1"
+              max="5"
+              bind:value={appConfigForm.auto_download_max_results}
+              placeholder="1"
+              disabled={!appConfigForm.auto_download_enabled}
+            />
+            <small>Prevents flooding SABnzbd if multiple matches appear.</small>
+          </div>
+        </div>
+      {/if}
     </section>
 
     <section class="surface">
