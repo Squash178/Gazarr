@@ -368,6 +368,7 @@ def get_sabnzbd_connection(session: Session, config: Optional[SabnzbdConfig] = N
 def get_app_config(session: Session) -> AppConfig:
     config = session.exec(select(AppConfig).limit(1)).first()
     if config:
+        _apply_app_config_defaults(config)
         return config
     settings = get_settings()
     now = datetime.utcnow()
@@ -383,6 +384,7 @@ def get_app_config(session: Session) -> AppConfig:
     session.add(config)
     session.commit()
     session.refresh(config)
+    _apply_app_config_defaults(config)
     return config
 
 
@@ -395,7 +397,20 @@ def update_app_config(session: Session, payload: AppConfigUpdate) -> AppConfig:
     session.add(config)
     session.commit()
     session.refresh(config)
+    _apply_app_config_defaults(config)
     return config
+
+
+def _apply_app_config_defaults(config: AppConfig) -> None:
+    settings = get_settings()
+    if config.auto_download_interval is None:
+        config.auto_download_interval = settings.auto_download_interval
+    if config.auto_download_max_results is None:
+        config.auto_download_max_results = settings.auto_download_max_results
+    if config.auto_fail_enabled is None:
+        config.auto_fail_enabled = settings.auto_fail_enabled
+    if config.auto_fail_hours is None:
+        config.auto_fail_hours = settings.auto_fail_hours
 
 
 # Download jobs ----------------------------------------------------------------
