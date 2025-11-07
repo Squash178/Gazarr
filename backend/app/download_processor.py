@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import shutil
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
@@ -47,11 +48,19 @@ def process_download_entry(
         if not job:
             raise ValueError(f"No download job found for id {job_id}")
 
-        magazine_language = _resolve_magazine_language(session, job)
+        magazine = _lookup_magazine_by_title(session, job.magazine_title)
+        if magazine and getattr(magazine, "language", None):
+            magazine_language = magazine.language
         issue_year = job.issue_year
         issue_month = job.issue_month
         issue_number = job.issue_number
         issue_label = job.issue_label
+        inferred_date = _infer_interval_publication_date(magazine, issue_number)
+        if inferred_date:
+            if issue_year is None:
+                issue_year = inferred_date.year
+            if issue_month is None:
+                issue_month = inferred_date.month
         magazine_folder, sanitized_name, metadata_title, series_name, series_index = _derive_issue_artifacts(job)
 
         update_download_job_status(
@@ -148,17 +157,35 @@ def _safe_rename(source: Path, destination: Path) -> Path:
     return destination
 
 
-def _resolve_magazine_language(session: Session, job: DownloadJob) -> str:
-    """
-    Calibre expects language metadata for downstream processing, so lookup the magazine preference.
-    Defaults to English when no explicit language is stored.
-    """
-    if job.magazine_title:
-        statement = select(Magazine).where(Magazine.title == job.magazine_title)
-        magazine = session.exec(statement).first()
-        if magazine and getattr(magazine, "language", None):
-            return magazine.language
-    return "en"
+def _lookup_magazine_by_title(session: Session, title: Optional[str]) -> Optional[Magazine]:
+    if not title:
+        return None
+    statement = select(Magazine).where(Magazine.title == title)
+    return session.exec(statement).first()
+
+
+def _infer_interval_publication_date(magazine: Optional[Magazine], issue_number: Optional[int]) -> Optional[datetime]:
+    if not magazine or issue_number is None:
+        return None
+    interval = getattr(magazine, "interval_months", None)
+    ref_issue = getattr(magazine, "interval_reference_issue", None)
+    ref_year = getattr(magazine, "interval_reference_year", None)
+    ref_month = getattr(magazine, "interval_reference_month", None)
+    if not all([interval, ref_issue, ref_year, ref_month]):
+        return None
+    if interval <= 0 or ref_month < 1 or ref_month > 12:
+        return None
+    diff = int(issue_number) - int(ref_issue)
+    start_month_index = ref_year * 12 + (ref_month - 1)
+    target_month_index = start_month_index + diff * int(interval)
+    if target_month_index < 0:
+        return None
+    year = target_month_index // 12
+    month = (target_month_index % 12) + 1
+    try:
+        return datetime(year, month, 1, tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def _strip_and_apply_metadata(
@@ -174,8 +201,9 @@ def _strip_and_apply_metadata(
     issue_number: Optional[int] = None,
 ) -> None:
     author = series_name or None
-    subject = issue_label
-    info_subject = subject or clean_title
+    description = issue_label or None
+    published_date = _build_issue_publication_date(issue_year, issue_month)
+    published_iso = published_date.isoformat() if published_date else None
 
     # 1) Re-write the PDF to strip existing metadata and set standard Info keys only
     reader = PdfReader(str(pdf_path))
@@ -187,8 +215,10 @@ def _strip_and_apply_metadata(
     info_metadata = {"/Title": clean_title}
     if author:
         info_metadata["/Author"] = author
-    if info_subject:
-        info_metadata["/Subject"] = info_subject
+    if published_iso:
+        pdf_timestamp = _format_pdf_timestamp(published_date)
+        info_metadata["/CreationDate"] = pdf_timestamp
+        info_metadata["/ModDate"] = pdf_timestamp
     writer.add_metadata(info_metadata)
 
     temp_path = pdf_path.with_suffix(".tmp.pdf")
@@ -205,8 +235,9 @@ def _strip_and_apply_metadata(
             current_meta["title"] = clean_title
             if author:
                 current_meta["author"] = author
-            if info_subject:
-                current_meta["subject"] = info_subject
+            if published_iso:
+                current_meta["creationDate"] = published_iso
+                current_meta["modDate"] = published_iso
             doc.set_metadata(current_meta)
         except Exception:
             # Non-fatal; continue to set XMP
@@ -216,7 +247,8 @@ def _strip_and_apply_metadata(
         title_xml = xml_escape(clean_title, {"'": "&apos;", '"': "&quot;"})
         lang_xml = xml_escape(lang, {"'": "&apos;", '"': "&quot;"})
         author_xml = xml_escape(author, {"'": "&apos;", '"': "&quot;"}) if author else None
-        subject_xml = xml_escape(subject, {"'": "&apos;", '"': "&quot;"}) if subject else None
+        subject_xml = xml_escape(description, {"'": "&apos;", '"': "&quot;"}) if description else None
+        published_xml = xml_escape(published_iso, {"'": "&apos;", '"': "&quot;"}) if published_iso else None
         series_xml = xml_escape(series_name, {"'": "&apos;", '"': "&quot;"}) if series_name else None
         series_index_value = _normalise_series_index(
             raw_series_index=series_index,
@@ -257,16 +289,21 @@ def _strip_and_apply_metadata(
         if subject_xml:
             description_lines.extend(
                 [
-                    "      <dc:subject>",
-                    "        <rdf:Bag>",
-                    f"          <rdf:li>{subject_xml}</rdf:li>",
-                    "        </rdf:Bag>",
-                    "      </dc:subject>",
                     "      <dc:description>",
                     "        <rdf:Alt>",
                     f"          <rdf:li xml:lang='x-default'>{subject_xml}</rdf:li>",
                     "        </rdf:Alt>",
                     "      </dc:description>",
+                ]
+            )
+        if published_xml:
+            description_lines.extend(
+                [
+                    "      <dc:date>",
+                    "        <rdf:Seq>",
+                    f"          <rdf:li>{published_xml}</rdf:li>",
+                    "        </rdf:Seq>",
+                    "      </dc:date>",
                 ]
             )
         if series_xml:
@@ -314,8 +351,28 @@ def _generate_thumbnail(pdf_path: Path, output_path: Path) -> Optional[Path]:
         doc.close()
 
 
+def _build_issue_publication_date(issue_year: Optional[int], issue_month: Optional[int]) -> Optional[datetime]:
+    if issue_year is None:
+        return None
+    month = 1
+    if issue_month and 1 <= int(issue_month) <= 12:
+        month = int(issue_month)
+    try:
+        return datetime(issue_year, month, 1, tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _format_pdf_timestamp(value: Optional[datetime]) -> str:
+    assert value is not None
+    utc_value = value.astimezone(timezone.utc)
+    return utc_value.strftime("D:%Y%m%d%H%M%S+00'00'")
+
+
 def _derive_issue_artifacts(job: DownloadJob) -> Tuple[str, str, str, str, Optional[str]]:
-    magazine = _normalize_spaces(job.magazine_title or job.title or job.content_name or "Magazine")
+    preferred_magazine = _normalize_spaces(job.magazine_title) if job.magazine_title else None
+    fallback_magazine = _normalize_spaces(job.title or job.content_name or "Magazine")
+    magazine = preferred_magazine or fallback_magazine
     label = _normalize_spaces(job.issue_label) if job.issue_label else None
     series_index = _build_series_index(job)
     magazine_folder = _sanitize_filename(magazine) or "Magazine"
@@ -356,7 +413,7 @@ def _derive_issue_artifacts(job: DownloadJob) -> Tuple[str, str, str, str, Optio
     sanitized_name = _sanitize_filename(file_label)
     metadata_title = file_label
 
-    series_name = magazine
+    series_name = preferred_magazine or magazine
     return magazine_folder, sanitized_name, metadata_title, series_name, series_index
 
 

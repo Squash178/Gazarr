@@ -25,6 +25,22 @@ class Magazine(SQLModel, table=True):
     regex: Optional[str] = Field(default=None, description="Optional custom search term/regex.")
     status: str = Field(default="active", description="active | paused")
     language: str = Field(default="en", description="Language code for issue parsing (en|de).")
+    interval_months: Optional[int] = Field(
+        default=None,
+        description="Number of months between issues for inferred dating (eg. 1 for monthly).",
+    )
+    interval_reference_issue: Optional[int] = Field(
+        default=None,
+        description="Issue number corresponding to the reference date for interval calculations.",
+    )
+    interval_reference_year: Optional[int] = Field(
+        default=None,
+        description="Year component of the reference issue date.",
+    )
+    interval_reference_month: Optional[int] = Field(
+        default=None,
+        description="Month component (1-12) of the reference issue date.",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

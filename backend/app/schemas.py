@@ -38,6 +38,29 @@ class MagazineBase(BaseModel):
     regex: Optional[constr(strip_whitespace=True, min_length=1)] = None
     status: constr(strip_whitespace=True, min_length=1) = "active"
     language: constr(strip_whitespace=True, min_length=2, max_length=5) = "en"
+    interval_months: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=12,
+        description="Number of months between issues to infer publish dates.",
+    )
+    interval_reference_issue: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Issue number tied to the reference date.",
+    )
+    interval_reference_year: Optional[int] = Field(
+        default=None,
+        ge=1900,
+        le=2200,
+        description="Year of the reference issue used for inferred dating.",
+    )
+    interval_reference_month: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=12,
+        description="Month of the reference issue used for inferred dating.",
+    )
 
 
 class MagazineCreate(MagazineBase):
@@ -49,6 +72,10 @@ class MagazineUpdate(BaseModel):
     regex: Optional[constr(strip_whitespace=True, min_length=1)] = None
     status: Optional[constr(strip_whitespace=True, min_length=1)] = None
     language: Optional[constr(strip_whitespace=True, min_length=2, max_length=5)] = None
+    interval_months: Optional[int] = Field(default=None, ge=1, le=12)
+    interval_reference_issue: Optional[int] = Field(default=None, ge=1)
+    interval_reference_year: Optional[int] = Field(default=None, ge=1900, le=2200)
+    interval_reference_month: Optional[int] = Field(default=None, ge=1, le=12)
 
 
 class MagazineRead(MagazineBase):
@@ -179,3 +206,7 @@ class DownloadQueueResponse(BaseModel):
     enabled: bool
     entries: List[DownloadQueueEntry] = Field(default_factory=list)
     jobs: List[DownloadJobRead] = Field(default_factory=list)
+
+
+class DownloadClearResponse(BaseModel):
+    cleared: int = Field(default=0, ge=0)

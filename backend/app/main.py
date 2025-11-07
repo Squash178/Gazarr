@@ -33,6 +33,7 @@ from .schemas import (
     DownloadQueueEntry,
     DownloadJobRead,
     DownloadQueueResponse,
+    DownloadClearResponse,
     SabnzbdEnqueueRequest,
     SabnzbdEnqueueResponse,
     SabnzbdStatus,
@@ -66,6 +67,7 @@ from .services import (
     update_sabnzbd_config,
     update_magazine,
     update_provider,
+    clear_download_jobs,
 )
 
 app = FastAPI(title="Gazarr API")
@@ -312,6 +314,12 @@ def list_downloads_endpoint(session: Session = Depends(get_session)) -> Download
             )
         )
     return DownloadQueueResponse(enabled=True, entries=entries, jobs=job_payload)
+
+
+@app.delete("/downloads", response_model=DownloadClearResponse)
+def clear_downloads_endpoint(session: Session = Depends(get_session)) -> DownloadClearResponse:
+    cleared = clear_download_jobs(session)
+    return DownloadClearResponse(cleared=cleared)
 
 
 @app.post("/sabnzbd/download", response_model=SabnzbdEnqueueResponse)

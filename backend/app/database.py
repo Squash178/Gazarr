@@ -17,6 +17,7 @@ engine = create_engine(
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     _ensure_language_column()
+    _ensure_magazine_interval_columns()
     _ensure_download_job_columns()
 
 
@@ -54,5 +55,22 @@ def _ensure_download_job_columns() -> None:
         try:
             with engine.begin() as connection:
                 connection.exec_driver_sql(f"ALTER TABLE downloadjob ADD COLUMN {column} {ddl_type}")
+        except OperationalError:
+            continue
+
+
+def _ensure_magazine_interval_columns() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+    columns = {
+        "interval_months": "INTEGER",
+        "interval_reference_issue": "INTEGER",
+        "interval_reference_year": "INTEGER",
+        "interval_reference_month": "INTEGER",
+    }
+    for column, ddl_type in columns.items():
+        try:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(f"ALTER TABLE magazine ADD COLUMN {column} {ddl_type}")
         except OperationalError:
             continue

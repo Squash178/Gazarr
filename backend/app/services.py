@@ -7,7 +7,7 @@ from xml.etree import ElementTree as ET
 
 import httpx
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from .models import DownloadJob, Magazine, Provider, SabnzbdConfig
 from .schemas import (
@@ -587,3 +587,9 @@ def list_active_download_jobs(session: Session) -> List[DownloadJob]:
         DownloadJob.status.in_(["pending", "queued", "downloading", "processing", "completed"])
     )
     return list(session.exec(statement))
+
+
+def clear_download_jobs(session: Session) -> int:
+    result = session.exec(delete(DownloadJob))
+    session.commit()
+    return result.rowcount or 0

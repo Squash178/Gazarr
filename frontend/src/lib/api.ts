@@ -43,6 +43,10 @@ export type Magazine = {
   regex: string | null;
   status: string;
   language: string;
+  interval_months: number | null;
+  interval_reference_issue: number | null;
+  interval_reference_year: number | null;
+  interval_reference_month: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -153,6 +157,10 @@ export type DownloadQueueResponse = {
   jobs: TrackedDownload[];
 };
 
+export type DownloadClearResponse = {
+  cleared: number;
+};
+
 export const api = {
   getProviders: () => request<Provider[]>('/providers'),
   createProvider: (payload: Partial<Provider>) =>
@@ -190,5 +198,9 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(payload)
     }),
-  getDownloadQueue: () => request<DownloadQueueResponse>('/downloads')
+  getDownloadQueue: () => request<DownloadQueueResponse>('/downloads'),
+  clearDownloadJobs: () =>
+    request<DownloadClearResponse>('/downloads', {
+      method: 'DELETE'
+    })
 };

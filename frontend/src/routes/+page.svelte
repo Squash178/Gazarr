@@ -40,6 +40,7 @@
   let trackedDownloads: TrackedDownload[] = [];
   let downloadsEnabled = false;
   let loadingDownloads = false;
+  let clearingDownloads = false;
   let downloadsTimer: ReturnType<typeof setInterval> | null = null;
 
   let loadingProviders = false;
@@ -62,7 +63,11 @@
   const magazineForm = {
     title: '',
     regex: '',
-    language: 'en'
+    language: 'en',
+    interval_months: '',
+    interval_reference_issue: '',
+    interval_reference_year: '',
+    interval_reference_month: ''
   };
 
   const sabnzbdForm = {
@@ -71,6 +76,15 @@
     category: '',
     priority: '',
     timeout: ''
+  };
+
+  const parseOptionalInt = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isNaN(parsed) ? null : parsed;
   };
 
   const resetProviderForm = () => {
@@ -85,6 +99,10 @@
     magazineForm.title = '';
     magazineForm.regex = '';
     magazineForm.language = 'en';
+    magazineForm.interval_months = '';
+    magazineForm.interval_reference_issue = '';
+    magazineForm.interval_reference_year = '';
+    magazineForm.interval_reference_month = '';
   };
 
   async function withToast<T>(fn: () => Promise<T>, successMessage: string) {
@@ -282,7 +300,16 @@
   async function handleCreateMagazine() {
     await withToast(
       async () => {
-        await api.createMagazine({ ...magazineForm, regex: magazineForm.regex || null });
+        const payload = {
+          title: magazineForm.title.trim(),
+          regex: magazineForm.regex.trim() ? magazineForm.regex.trim() : null,
+          language: magazineForm.language || 'en',
+          interval_months: parseOptionalInt(magazineForm.interval_months),
+          interval_reference_issue: parseOptionalInt(magazineForm.interval_reference_issue),
+          interval_reference_year: parseOptionalInt(magazineForm.interval_reference_year),
+          interval_reference_month: parseOptionalInt(magazineForm.interval_reference_month)
+        };
+        await api.createMagazine(payload);
         await loadMagazines();
         resetMagazineForm();
       },
@@ -345,6 +372,28 @@
       return;
     }
     await loadDownloads();
+  }
+
+  async function handleClearDownloads() {
+    if (clearingDownloads) {
+      return;
+    }
+    clearingDownloads = true;
+    try {
+      await withToast(
+        async () => {
+          await api.clearDownloadJobs();
+          downloadQueue = [];
+          trackedDownloads = [];
+        },
+        'Cleared tracked downloads'
+      );
+      await loadDownloads();
+    } catch (err) {
+      console.error('Failed to clear downloads', err);
+    } finally {
+      clearingDownloads = false;
+    }
   }
 
   async function handleDownload(result: SearchResult) {
@@ -537,6 +586,43 @@
               <option value={option.code}>{option.label}</option>
             {/each}
           </select>
+        </div>
+        <div class="input-field">
+          <label for="magazine-interval">Publication interval (months, optional)</label>
+          <input
+            id="magazine-interval"
+            bind:value={magazineForm.interval_months}
+            placeholder="e.g. 1"
+            inputmode="numeric"
+          />
+          <small>Used when releases only include an issue number.</small>
+        </div>
+        <div class="input-field">
+          <label for="magazine-ref-issue">Reference issue number</label>
+          <input
+            id="magazine-ref-issue"
+            bind:value={magazineForm.interval_reference_issue}
+            placeholder="e.g. 250"
+            inputmode="numeric"
+          />
+        </div>
+        <div class="input-field">
+          <label for="magazine-ref-month">Reference month (1-12)</label>
+          <input
+            id="magazine-ref-month"
+            bind:value={magazineForm.interval_reference_month}
+            placeholder="e.g. 4"
+            inputmode="numeric"
+          />
+        </div>
+        <div class="input-field">
+          <label for="magazine-ref-year">Reference year</label>
+          <input
+            id="magazine-ref-year"
+            bind:value={magazineForm.interval_reference_year}
+            placeholder="e.g. 2024"
+            inputmode="numeric"
+          />
         </div>
       </div>
 
@@ -737,9 +823,22 @@
             {/if}
           </p>
         </div>
-        <button type="button" class="btn-primary" on:click={handleRefreshDownloads} disabled={loadingDownloads}>
-          {loadingDownloads ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: flex-end;">
+          <button type="button" class="btn-primary" on:click={handleRefreshDownloads} disabled={loadingDownloads}>
+            {loadingDownloads ? 'Refreshing…' : 'Refresh'}
+          </button>
+          <button
+            type="button"
+            class="btn-primary"
+            style="background: rgba(248, 113, 113, 0.28); color: rgba(255, 255, 255, 0.9);"
+            on:click={handleClearDownloads}
+            disabled={
+              clearingDownloads || !downloadsEnabled || (!trackedDownloads.length && !downloadQueue.length)
+            }
+          >
+            {clearingDownloads ? 'Clearing…' : 'Clear downloads'}
+          </button>
+        </div>
       </div>
 
       {#if !downloadsEnabled}
