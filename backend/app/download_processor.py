@@ -306,17 +306,19 @@ def _strip_and_apply_metadata(
                     "      </dc:date>",
                 ]
             )
-        if series_xml:
-            description_lines.append(f"      <calibre:series>{series_xml}</calibre:series>")
-        if series_index_xml:
-            description_lines.append(f"      <calibre:series_index>{series_index_xml}</calibre:series_index>")
+        if series_xml or series_index_xml:
+            description_lines.append("      <calibre:series rdf:parseType='Resource'>")
+            description_lines.append(f"        <rdf:value>{series_xml or ''}</rdf:value>")
+            if series_index_xml:
+                description_lines.append(f"        <calibreSI:series_index>{series_index_xml}</calibreSI:series_index>")
+            description_lines.append("      </calibre:series>")
 
         description_block = "\n".join(description_lines)
 
         xmp_packet = f"""
 <?xpacket begin='\ufeff' id='W5M0MpCehiHzreSzNTczkc9d'?>
 <x:xmpmeta xmlns:x='adobe:ns:meta/'>
-  <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' xmlns:dc='http://purl.org/dc/elements/1.1/' xmlns:pdf='http://ns.adobe.com/pdf/1.3/' xmlns:calibre='http://calibre.kovidgoyal.net/2009/metadata'>
+  <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' xmlns:dc='http://purl.org/dc/elements/1.1/' xmlns:pdf='http://ns.adobe.com/pdf/1.3/' xmlns:calibre='http://calibre-ebook.com/xmp-namespace' xmlns:calibreSI='http://calibre-ebook.com/xmp-namespace/seriesIndex'>
     <rdf:Description rdf:about=''>
 {description_block}
     </rdf:Description>
@@ -358,7 +360,8 @@ def _build_issue_publication_date(issue_year: Optional[int], issue_month: Option
     if issue_month and 1 <= int(issue_month) <= 12:
         month = int(issue_month)
     try:
-        return datetime(issue_year, month, 1, tzinfo=timezone.utc)
+        # Use midday UTC to keep the calendar date stable across timezones.
+        return datetime(issue_year, month, 1, 12, 0, 0, tzinfo=timezone.utc)
     except ValueError:
         return None
 
