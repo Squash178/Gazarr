@@ -67,6 +67,8 @@ def _ensure_magazine_interval_columns() -> None:
         "interval_reference_issue": "INTEGER",
         "interval_reference_year": "INTEGER",
         "interval_reference_month": "INTEGER",
+        "auto_download_since_year": "INTEGER",
+        "auto_download_since_issue": "INTEGER",
     }
     for column, ddl_type in columns.items():
         try:

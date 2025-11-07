@@ -61,6 +61,18 @@ class MagazineBase(BaseModel):
         le=12,
         description="Month of the reference issue used for inferred dating.",
     )
+    auto_download_since_year: Optional[int] = Field(
+        default=None,
+        ge=1900,
+        le=2200,
+        description="Auto downloader only considers issues newer than this year.",
+    )
+    auto_download_since_issue: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=10000,
+        description="Auto downloader only considers issues with a higher number when the year matches.",
+    )
 
 
 class MagazineCreate(MagazineBase):
@@ -76,6 +88,8 @@ class MagazineUpdate(BaseModel):
     interval_reference_issue: Optional[int] = Field(default=None, ge=1)
     interval_reference_year: Optional[int] = Field(default=None, ge=1900, le=2200)
     interval_reference_month: Optional[int] = Field(default=None, ge=1, le=12)
+    auto_download_since_year: Optional[int] = Field(default=None, ge=1900, le=2200)
+    auto_download_since_issue: Optional[int] = Field(default=None, ge=1, le=10000)
 
 
 class MagazineRead(MagazineBase):

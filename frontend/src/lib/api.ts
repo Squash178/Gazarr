@@ -47,6 +47,8 @@ export type Magazine = {
   interval_reference_issue: number | null;
   interval_reference_year: number | null;
   interval_reference_month: number | null;
+  auto_download_since_year: number | null;
+  auto_download_since_issue: number | null;
   created_at: string;
   updated_at: string;
 };

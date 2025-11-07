@@ -67,7 +67,9 @@
     interval_months: '',
     interval_reference_issue: '',
     interval_reference_year: '',
-    interval_reference_month: ''
+    interval_reference_month: '',
+    auto_download_since_year: '',
+    auto_download_since_issue: ''
   };
 
   const sabnzbdForm = {
@@ -103,6 +105,8 @@
     magazineForm.interval_reference_issue = '';
     magazineForm.interval_reference_year = '';
     magazineForm.interval_reference_month = '';
+    magazineForm.auto_download_since_year = '';
+    magazineForm.auto_download_since_issue = '';
   };
 
   async function withToast<T>(fn: () => Promise<T>, successMessage: string) {
@@ -307,7 +311,9 @@
           interval_months: parseOptionalInt(magazineForm.interval_months),
           interval_reference_issue: parseOptionalInt(magazineForm.interval_reference_issue),
           interval_reference_year: parseOptionalInt(magazineForm.interval_reference_year),
-          interval_reference_month: parseOptionalInt(magazineForm.interval_reference_month)
+          interval_reference_month: parseOptionalInt(magazineForm.interval_reference_month),
+          auto_download_since_year: parseOptionalInt(magazineForm.auto_download_since_year),
+          auto_download_since_issue: parseOptionalInt(magazineForm.auto_download_since_issue)
         };
         await api.createMagazine(payload);
         await loadMagazines();
@@ -339,6 +345,8 @@
     );
   }
 
+  type AutoStartField = 'auto_download_since_year' | 'auto_download_since_issue';
+
   async function handleLanguageChange(magazine: Magazine, language: string) {
     if (language === magazine.language) {
       return;
@@ -350,6 +358,17 @@
         await loadMagazines();
       },
       'Magazine language updated'
+    );
+  }
+
+  async function handleAutoStartChange(magazine: Magazine, field: AutoStartField, value: string) {
+    const parsed = parseOptionalInt(value);
+    await withToast(
+      async () => {
+        await api.updateMagazine(magazine.id, { [field]: parsed });
+        magazine[field] = parsed as Magazine[AutoStartField];
+      },
+      'Auto-download guard updated'
     );
   }
 
@@ -624,6 +643,26 @@
             inputmode="numeric"
           />
         </div>
+        <div class="input-field">
+          <label for="magazine-auto-year">Auto-download start year</label>
+          <input
+            id="magazine-auto-year"
+            bind:value={magazineForm.auto_download_since_year}
+            placeholder="e.g. 2023"
+            inputmode="numeric"
+          />
+          <small>Only issues newer than this year will be auto-downloaded.</small>
+        </div>
+        <div class="input-field">
+          <label for="magazine-auto-issue">Auto-download start issue number</label>
+          <input
+            id="magazine-auto-issue"
+            bind:value={magazineForm.auto_download_since_issue}
+            placeholder="e.g. 350"
+            inputmode="numeric"
+          />
+          <small>When the issue year matches, Gazarr only grabs numbers above this.</small>
+        </div>
       </div>
 
       <div style="overflow-x: auto;">
@@ -633,6 +672,7 @@
               <th>Title</th>
               <th>Search</th>
               <th>Language</th>
+              <th>Auto download start</th>
               <th>Status</th>
               <th style="text-align: right;">Actions</th>
             </tr>
@@ -640,11 +680,11 @@
           <tbody>
             {#if loadingMagazines}
               <tr>
-                <td colspan="5">Loading magazines…</td>
+                <td colspan="6">Loading magazines…</td>
               </tr>
             {:else if magazines.length === 0}
               <tr>
-                <td colspan="5">Add a magazine title to kick off your library.</td>
+                <td colspan="6">Add a magazine title to kick off your library.</td>
               </tr>
             {:else}
               {#each magazines as magazine}
@@ -664,6 +704,40 @@
                         <option value={option.code}>{option.label}</option>
                       {/each}
                     </select>
+                  </td>
+                  <td>
+                    <div class="auto-guard">
+                      <div class="auto-guard-inputs">
+                        <input
+                          type="number"
+                          min="1900"
+                          max="2200"
+                          placeholder="Year"
+                          value={magazine.auto_download_since_year ?? ''}
+                          on:change={(event) =>
+                            handleAutoStartChange(
+                              magazine,
+                              'auto_download_since_year',
+                              (event.target as HTMLInputElement).value
+                            )
+                          }
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="Issue #"
+                          value={magazine.auto_download_since_issue ?? ''}
+                          on:change={(event) =>
+                            handleAutoStartChange(
+                              magazine,
+                              'auto_download_since_issue',
+                              (event.target as HTMLInputElement).value
+                            )
+                          }
+                        />
+                      </div>
+                      <small>Auto downloads only if newer.</small>
+                    </div>
                   </td>
                   <td>
                     <span class="chip {magazine.status === 'active' ? 'success' : 'warning'}">
@@ -1164,5 +1238,29 @@
     background: rgba(59, 130, 246, 0.28);
     border-color: rgba(96, 165, 250, 0.6);
     color: rgba(255, 255, 255, 0.95);
+  }
+
+  .auto-guard {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .auto-guard-inputs {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .auto-guard input {
+    width: 100%;
+    padding: 0.4rem 0.55rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.45);
+    color: rgba(226, 232, 240, 0.95);
+  }
+
+  .auto-guard small {
+    color: rgba(226, 232, 240, 0.55);
   }
 </style>

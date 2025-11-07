@@ -41,6 +41,14 @@ class Magazine(SQLModel, table=True):
         default=None,
         description="Month component (1-12) of the reference issue date.",
     )
+    auto_download_since_year: Optional[int] = Field(
+        default=None,
+        description="Auto downloader only grabs issues after this year.",
+    )
+    auto_download_since_issue: Optional[int] = Field(
+        default=None,
+        description="Auto downloader only grabs issues after this issue number (when same year).",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

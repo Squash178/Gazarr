@@ -62,3 +62,15 @@ When the directories are configured the backend spawns two background tasks on s
 - A SABnzbd tracker that polls the queue/history endpoints and records progress for each job so the UI can report intermediate stages (queued, downloading, processing, completed, moved).
 
 Use `GET /downloads` to inspect both the filesystem queue and the tracked SABnzbd jobs.
+
+## Automatic downloads
+
+Gazarr can automatically look for new issues and enqueue them in SABnzbd. Set:
+
+- `GAZARR_AUTO_DOWNLOAD_ENABLED=true`
+- `GAZARR_AUTO_DOWNLOAD_INTERVAL=900`
+- `GAZARR_AUTO_DOWNLOAD_MAX_RESULTS=1`
+
+When enabled, a background task reuses the built-in Torznab search, filters out issues already downloading/in the library, and submits the best match to SABnzbd. If SABnzbd reports a failure for an issue, the next scan will try a different NZB for the same magazine.
+
+Each magazine can also be given an “auto-download start” year and issue number from the dashboard. Gazarr will ignore any releases at or before that marker so you can seed the catalog at a known point (e.g. “start at 2023 issue #350”) without bulk-downloading older history.

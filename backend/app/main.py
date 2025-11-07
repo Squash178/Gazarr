@@ -47,6 +47,7 @@ from .sabnzbd import (
     test_connection,
     is_configured as sabnzbd_configured,
 )
+from .auto_downloader import AutoDownloadConfig, AutoDownloader
 from .download_monitor import DownloadMonitor, MonitorConfig, describe_downloads
 from .download_tracker import DownloadTracker, TrackerConfig
 from .services import (
@@ -163,6 +164,19 @@ def _setup_download_tracker() -> DownloadTracker:
     return tracker
 
 
+def _setup_auto_downloader() -> Optional[AutoDownloader]:
+    settings = get_settings()
+    if not settings.auto_download_enabled:
+        return None
+    config = AutoDownloadConfig(
+        poll_interval=settings.auto_download_interval,
+        max_results_per_magazine=settings.auto_download_max_results,
+    )
+    downloader = AutoDownloader(config)
+    downloader.start()
+    return downloader
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
     init_db()
@@ -174,6 +188,12 @@ async def startup_event() -> None:
         logger.info("Download monitor disabled (missing downloads or library directory).")
     tracker = _setup_download_tracker()
     app.state.download_tracker = tracker
+    downloader = _setup_auto_downloader()
+    if downloader:
+        app.state.auto_downloader = downloader
+        logger.info("Auto downloader enabled.")
+    else:
+        logger.info("Auto downloader disabled (set GAZARR_AUTO_DOWNLOAD_ENABLED=true to enable).")
 
 
 @app.on_event("shutdown")
@@ -184,6 +204,9 @@ async def shutdown_event() -> None:
     tracker: Optional[DownloadTracker] = getattr(app.state, "download_tracker", None)
     if tracker:
         await tracker.stop()
+    downloader: Optional[AutoDownloader] = getattr(app.state, "auto_downloader", None)
+    if downloader:
+        await downloader.stop()
 
 
 @app.get("/health", response_model=HealthResponse)
