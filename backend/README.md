@@ -72,4 +72,4 @@ Each magazine can also be given an “auto-download start” year and issue numb
 
 Need an immediate refresh? Hit the “Scan auto downloads” button in the dashboard header to run the background search loop on demand.
 
-You can also enable the “Auto fail stuck downloads” option in the same settings panel. When active, Gazarr watches SABnzbd queue progress and automatically marks any job as failed if it hasn’t reported progress within your chosen number of hours.
+You can also enable the “Auto fail stuck downloads” option in the same settings panel. When active, Gazarr watches SABnzbd queue progress and automatically marks any job as failed if it hasn’t reported progress within your chosen number of minutes.

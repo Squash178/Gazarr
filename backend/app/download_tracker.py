@@ -148,7 +148,7 @@ class DownloadTracker:
         value = status.lower()
         if "down" in value:
             return "downloading"
-        if "post" in value or "check" in value:
+        if "post" in value or "check" in value or "extract" in value:
             return "processing"
         if "pause" in value:
             return "paused"
@@ -170,10 +170,10 @@ class DownloadTracker:
     def _auto_fail_jobs(self, session: Session, app_config) -> None:
         if not getattr(app_config, "auto_fail_enabled", False):
             return
-        threshold_hours = app_config.auto_fail_hours or get_settings().auto_fail_hours
-        if threshold_hours <= 0:
+        threshold_minutes = app_config.auto_fail_minutes or get_settings().auto_fail_minutes
+        if threshold_minutes <= 0:
             return
-        threshold = timedelta(hours=threshold_hours)
+        threshold = timedelta(minutes=threshold_minutes)
         now = datetime.utcnow()
         watched_statuses = {"pending", "queued", "downloading", "processing", "paused"}
         for job in list_active_download_jobs(session):
@@ -187,5 +187,5 @@ class DownloadTracker:
             mark_download_job_failed(
                 session,
                 job,
-                message=f"Auto-failed after {threshold_hours:g}h without SABnzbd progress.",
+                message=f"Auto-failed after {threshold_minutes:g}m without SABnzbd progress.",
             )

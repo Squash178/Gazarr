@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import Column, Float
 from sqlmodel import Field, SQLModel
 
 
@@ -74,7 +75,11 @@ class AppConfig(SQLModel, table=True):
     auto_download_interval: float = Field(default=900.0, description="Seconds between auto download scans.")
     auto_download_max_results: int = Field(default=1, description="Max issues per magazine per scan.")
     auto_fail_enabled: bool = Field(default=False, description="Auto fail jobs stuck in SABnzbd.")
-    auto_fail_hours: float = Field(default=12.0, description="Hours before a stuck job is failed.")
+    auto_fail_minutes: float = Field(
+        default=720.0,
+        sa_column=Column("auto_fail_hours", Float, default=720.0),
+        description="Minutes before a stuck job is failed.",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

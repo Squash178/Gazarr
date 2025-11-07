@@ -36,7 +36,13 @@ class Settings(BaseSettings):
         description="Maximum NZBs enqueued per magazine in a single auto-download scan.",
     )
     auto_fail_enabled: bool = Field(default=False, description="Automatically fail SABnzbd jobs that appear stuck.")
-    auto_fail_hours: float = Field(default=12.0, description="Hours before a stuck job is automatically failed.")
+    auto_fail_minutes: float = Field(default=720.0, description="Minutes before a stuck job is automatically failed.")
+    legacy_auto_fail_hours: Optional[float] = Field(
+        default=None,
+        alias="auto_fail_hours",
+        exclude=True,
+        description="Deprecated: use AUTO_FAIL_MINUTES instead.",
+    )
     auth_username: Optional[str] = Field(default=None, description="HTTP basic auth username required for API access.")
     auth_password: Optional[str] = Field(default=None, description="HTTP basic auth password required for API access.")
 
@@ -52,6 +58,10 @@ class Settings(BaseSettings):
             if folder:
                 path = folder.expanduser()
                 path.mkdir(parents=True, exist_ok=True)
+
+    def model_post_init(self, __context) -> None:
+        if (self.auto_fail_minutes is None or self.auto_fail_minutes <= 0) and self.legacy_auto_fail_hours:
+            self.auto_fail_minutes = self.legacy_auto_fail_hours * 60
 
 
 @lru_cache

@@ -377,7 +377,7 @@ def get_app_config(session: Session) -> AppConfig:
         auto_download_interval=settings.auto_download_interval,
         auto_download_max_results=settings.auto_download_max_results,
         auto_fail_enabled=settings.auto_fail_enabled,
-        auto_fail_hours=settings.auto_fail_hours,
+        auto_fail_minutes=settings.auto_fail_minutes,
         created_at=now,
         updated_at=now,
     )
@@ -409,8 +409,8 @@ def _apply_app_config_defaults(config: AppConfig) -> None:
         config.auto_download_max_results = settings.auto_download_max_results
     if config.auto_fail_enabled is None:
         config.auto_fail_enabled = settings.auto_fail_enabled
-    if config.auto_fail_hours is None:
-        config.auto_fail_hours = settings.auto_fail_hours
+    if config.auto_fail_minutes is None:
+        config.auto_fail_minutes = settings.auto_fail_minutes
 
 
 # Download jobs ----------------------------------------------------------------
