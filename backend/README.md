@@ -74,3 +74,5 @@ Gazarr can automatically look for new issues and enqueue them in SABnzbd. Set:
 When enabled, a background task reuses the built-in Torznab search, filters out issues already downloading/in the library, and submits the best match to SABnzbd. If SABnzbd reports a failure for an issue, the next scan will try a different NZB for the same magazine.
 
 Each magazine can also be given an “auto-download start” year and issue number from the dashboard. Gazarr will ignore any releases at or before that marker so you can seed the catalog at a known point (e.g. “start at 2023 issue #350”) without bulk-downloading older history.
+
+Need an immediate refresh? Hit the “Scan auto downloads” button in the dashboard header to run the background search loop on demand.

@@ -35,6 +35,7 @@ class AutoDownloader:
         self.config = config
         self._task: Optional[asyncio.Task[None]] = None
         self._stop_event = asyncio.Event()
+        self._scan_lock = asyncio.Lock()
 
     def start(self) -> None:
         if self._task and not self._task.done():
@@ -77,36 +78,51 @@ class AutoDownloader:
         except asyncio.CancelledError:
             raise
 
-    async def _sync_once(self) -> None:
-        with Session(engine) as session:
-            connection: Optional[SabnzbdConnection] = get_sabnzbd_connection(session)
-            if not is_configured(connection):
-                raise SabnzbdNotConfigured("SABnzbd connection missing.")
+    async def scan_now(self) -> Tuple[bool, int]:
+        if not self._task or self._task.done():
+            self.start()
+        if self._scan_lock.locked():
+            logger.info("Auto download scan already running; ignoring manual trigger.")
+            return False, 0
+        enqueued = await self._sync_once()
+        return True, enqueued
 
-            results = await search_magazines(session)
-            if not results:
-                logger.debug("Auto downloader scan produced no search results.")
-                return
+    async def _sync_once(self) -> int:
+        async with self._scan_lock:
+            with Session(engine) as session:
+                connection: Optional[SabnzbdConnection] = get_sabnzbd_connection(session)
+                if not is_configured(connection):
+                    raise SabnzbdNotConfigured("SABnzbd connection missing.")
 
-            job_index = self._build_job_index(session)
-            thresholds = self._load_thresholds(session)
-            candidates = self._select_candidates(results, job_index, thresholds)
-            if not candidates:
-                logger.debug("Auto downloader found no candidates to enqueue.")
-                return
+                results = await search_magazines(session)
+                if not results:
+                    logger.debug("Auto downloader scan produced no search results.")
+                    return 0
 
-            for issue_key, result in candidates:
-                if self._stop_event.is_set():
-                    break
-                try:
-                    await self._enqueue_result(session, connection, result)
-                except (SabnzbdError, SabnzbdNotConfigured) as exc:
-                    logger.warning("Auto download failed to enqueue %s from %s: %s", result.title, result.provider, exc)
-                    continue
-                except Exception:
-                    logger.exception("Unexpected failure enqueuing %s from %s", result.title, result.provider)
-                    continue
-                self._mark_issue_active(job_index, issue_key, str(result.link))
+                job_index = self._build_job_index(session)
+                thresholds = self._load_thresholds(session)
+                candidates = self._select_candidates(results, job_index, thresholds)
+                if not candidates:
+                    logger.debug("Auto downloader found no candidates to enqueue.")
+                    return 0
+
+                enqueued = 0
+                for issue_key, result in candidates:
+                    if self._stop_event.is_set():
+                        break
+                    try:
+                        await self._enqueue_result(session, connection, result)
+                        enqueued += 1
+                    except (SabnzbdError, SabnzbdNotConfigured) as exc:
+                        logger.warning(
+                            "Auto download failed to enqueue %s from %s: %s", result.title, result.provider, exc
+                        )
+                        continue
+                    except Exception:
+                        logger.exception("Unexpected failure enqueuing %s from %s", result.title, result.provider)
+                        continue
+                    self._mark_issue_active(job_index, issue_key, str(result.link))
+                return enqueued
 
     async def _enqueue_result(self, session: Session, connection: SabnzbdConnection, result: SearchResult) -> None:
         sab_result = await enqueue_url(str(result.link), title=result.title, connection=connection)

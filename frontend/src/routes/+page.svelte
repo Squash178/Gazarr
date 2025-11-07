@@ -8,7 +8,8 @@
     type SabnzbdStatus,
     type SabnzbdConfig,
     type DownloadQueueEntry,
-    type TrackedDownload
+    type TrackedDownload,
+    type AutoDownloadScanResponse
   } from '$lib/api';
 
   const LANGUAGES = [
@@ -49,6 +50,7 @@
 
   let toast: { type: 'success' | 'error'; message: string } | null = null;
   let queueingDownloads = new Set<string>();
+  let autoScanPending = false;
 
   $: visibleResults = activeFilters.length ? searchResults.filter(matchesFilters) : [...searchResults];
 
@@ -509,6 +511,30 @@
       sabnzbdTesting = false;
     }
   }
+
+  async function handleAutoDownloadScan() {
+    if (autoScanPending) {
+      return;
+    }
+    autoScanPending = true;
+    try {
+      const response: AutoDownloadScanResponse = await api.triggerAutoDownloadScan();
+      toast = {
+        type: 'success',
+        message: response.message
+      };
+    } catch (err) {
+      toast = {
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Auto download scan failed'
+      };
+    } finally {
+      autoScanPending = false;
+      setTimeout(() => {
+        toast = null;
+      }, 4200);
+    }
+  }
 </script>
 
 <main style="max-width: 1180px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem;">
@@ -533,6 +559,16 @@
             Scanning...
           {:else}
             🔍 Run global search
+          {/if}
+        </button>
+        <button type="button" class="btn-primary" on:click={handleAutoDownloadScan} disabled={autoScanPending}>
+          {#if autoScanPending}
+            <span
+              style="width: 0.85rem; height: 0.85rem; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: spin 0.9s linear infinite;"
+            ></span>
+            Syncing auto downloads...
+          {:else}
+            ⚡ Scan auto downloads
           {/if}
         </button>
         <small style="color: rgba(226, 232, 240, 0.52); letter-spacing: 0.08em; text-transform: uppercase;">

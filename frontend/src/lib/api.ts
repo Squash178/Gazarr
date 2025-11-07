@@ -163,6 +163,12 @@ export type DownloadClearResponse = {
   cleared: number;
 };
 
+export type AutoDownloadScanResponse = {
+  started: boolean;
+  enqueued: number;
+  message: string;
+};
+
 export const api = {
   getProviders: () => request<Provider[]>('/providers'),
   createProvider: (payload: Partial<Provider>) =>
@@ -199,6 +205,10 @@ export const api = {
     request<SabnzbdConfig>('/sabnzbd/config', {
       method: 'PATCH',
       body: JSON.stringify(payload)
+    }),
+  triggerAutoDownloadScan: () =>
+    request<AutoDownloadScanResponse>('/auto-download/scan', {
+      method: 'POST'
     }),
   getDownloadQueue: () => request<DownloadQueueResponse>('/downloads'),
   clearDownloadJobs: () =>

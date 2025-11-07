@@ -38,6 +38,7 @@ from .schemas import (
     SabnzbdEnqueueResponse,
     SabnzbdStatus,
     SabnzbdTestResponse,
+    AutoDownloadScanResponse,
 )
 from .settings import get_settings
 from .sabnzbd import (
@@ -343,6 +344,36 @@ def list_downloads_endpoint(session: Session = Depends(get_session)) -> Download
 def clear_downloads_endpoint(session: Session = Depends(get_session)) -> DownloadClearResponse:
     cleared = clear_download_jobs(session)
     return DownloadClearResponse(cleared=cleared)
+
+
+@app.post("/auto-download/scan", response_model=AutoDownloadScanResponse)
+async def auto_download_scan_endpoint() -> AutoDownloadScanResponse:
+    downloader: Optional[AutoDownloader] = getattr(app.state, "auto_downloader", None)
+    if not downloader:
+        raise HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail="Auto downloader is disabled.",
+        )
+    try:
+        started, enqueued = await downloader.scan_now()
+    except SabnzbdNotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.exception("Auto download scan failed.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Auto download scan failed.",
+        ) from exc
+
+    if not started:
+        return AutoDownloadScanResponse(started=False, enqueued=0, message="Auto downloader is already scanning.")
+    message = (
+        f"Auto downloader enqueued {enqueued} new issue(s)." if enqueued else "Auto downloader scan completed; nothing new."
+    )
+    return AutoDownloadScanResponse(started=True, enqueued=enqueued, message=message)
 
 
 @app.post("/sabnzbd/download", response_model=SabnzbdEnqueueResponse)

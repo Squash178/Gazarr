@@ -179,6 +179,12 @@ class SabnzbdConfigRead(SabnzbdConfigBase):
         from_attributes = True
 
 
+class AutoDownloadScanResponse(BaseModel):
+    started: bool = True
+    enqueued: int = 0
+    message: str
+
+
 class DownloadQueueEntry(BaseModel):
     name: str
     type: Literal["file", "directory"]
