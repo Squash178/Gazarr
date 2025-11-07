@@ -470,23 +470,25 @@ def _normalise_series_index(
 
 
 def _build_series_index(job: DownloadJob) -> Optional[str]:
+    def _format_year_month(year: int, month: int) -> str:
+        return f"{int(year):04d}.{int(month):02d}"
+
+    def _format_year_issue(year: int, issue_num: int) -> str:
+        return f"{int(year):04d}.{int(issue_num):02d}"
+
+    if job.issue_year and job.issue_month:
+        return _format_year_month(job.issue_year, job.issue_month)
+    if job.issue_year and job.issue_number is not None:
+        return _format_year_issue(job.issue_year, job.issue_number)
     if job.issue_code:
         digits = re.sub(r"\D+", "", str(job.issue_code))
-        if len(digits) >= 8:
-            year = digits[:4]
-            mid = digits[4:6]
-            tail = digits[6:8]
-            if mid and mid != "00":
-                return year + mid
-            if tail and tail != "00":
-                return year + tail
-            return digits[:6]
         if len(digits) >= 6:
-            return digits[:6]
-    if job.issue_year and job.issue_month:
-        return f"{int(job.issue_year):04d}{int(job.issue_month):02d}"
-    if job.issue_year and job.issue_number is not None:
-        return f"{int(job.issue_year):04d}{int(job.issue_number):02d}"
+            year = digits[:4]
+            month_or_issue = digits[4:6]
+            if month_or_issue and month_or_issue != "00":
+                return f"{year}.{month_or_issue}"
+        if len(digits) >= 4:
+            return f"{digits[:4]}.00"
     return None
 
 
