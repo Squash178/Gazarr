@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import shutil
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -21,6 +23,8 @@ from .schemas import (
 from .settings import get_settings
 from .sabnzbd import SabnzbdConnection
 from .issue_parser import parse_issue
+
+logger = logging.getLogger(__name__)
 
 NEWZNAB_NS = {"newznab": "http://www.newznab.com/DTD/2010/feeds/attributes/"}
 
@@ -589,7 +593,39 @@ def list_active_download_jobs(session: Session) -> List[DownloadJob]:
     return list(session.exec(statement))
 
 
+def _purge_directory_contents(path: Optional[Path]) -> int:
+    if not path:
+        return 0
+    directory = path.expanduser()
+    if not directory.exists():
+        return 0
+    removed = 0
+    for entry in directory.iterdir():
+        if entry.name.startswith("."):
+            continue
+        try:
+            if entry.is_dir():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+            removed += 1
+        except Exception:
+            logger.exception("Failed removing download artifact: %s", entry)
+    return removed
+
+
 def clear_download_jobs(session: Session) -> int:
     result = session.exec(delete(DownloadJob))
     session.commit()
-    return result.rowcount or 0
+    settings = get_settings()
+    downloads_removed = _purge_directory_contents(settings.downloads_dir)
+    staging_removed = _purge_directory_contents(settings.staging_dir)
+    removed = result.rowcount or 0
+    if downloads_removed or staging_removed:
+        logger.info(
+            "Cleared %s download jobs and removed %s download entries (%s from staging).",
+            removed,
+            downloads_removed,
+            staging_removed,
+        )
+    return removed
