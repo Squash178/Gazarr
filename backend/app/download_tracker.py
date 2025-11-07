@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlmodel import Session
@@ -14,10 +15,13 @@ from .sabnzbd import (
     fetch_queue,
 )
 from .services import (
+    get_app_config,
     get_sabnzbd_connection,
     list_active_download_jobs,
+    mark_download_job_failed,
     update_download_job_status,
 )
+from .settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +90,7 @@ class DownloadTracker:
             connection: Optional[SabnzbdConnection] = get_sabnzbd_connection(session)
             if not connection:
                 raise SabnzbdNotConfigured("SABnzbd connection missing.")
+            app_config = get_app_config(session)
 
         queue_items = await fetch_queue(connection)
         history_items = await fetch_history(connection, limit=max(self.config.history_limit, len(queue_items) + 20))
@@ -134,6 +139,7 @@ class DownloadTracker:
                         content_name=history_item.name,
                         completed_at=history_item.completed,
                     )
+            self._auto_fail_jobs(session, app_config)
 
     @staticmethod
     def _map_queue_status(status: Optional[str]) -> str:
@@ -160,3 +166,26 @@ class DownloadTracker:
         if value in {"failed", "failure"}:
             return "failed"
         return value.replace(" ", "_")
+
+    def _auto_fail_jobs(self, session: Session, app_config) -> None:
+        if not getattr(app_config, "auto_fail_enabled", False):
+            return
+        threshold_hours = app_config.auto_fail_hours or get_settings().auto_fail_hours
+        if threshold_hours <= 0:
+            return
+        threshold = timedelta(hours=threshold_hours)
+        now = datetime.utcnow()
+        watched_statuses = {"pending", "queued", "downloading", "processing", "paused"}
+        for job in list_active_download_jobs(session):
+            if job.status not in watched_statuses:
+                continue
+            reference = job.last_seen or job.updated_at or job.created_at
+            if not reference:
+                continue
+            if now - reference < threshold:
+                continue
+            mark_download_job_failed(
+                session,
+                job,
+                message=f"Auto-failed after {threshold_hours:g}h without SABnzbd progress.",
+            )

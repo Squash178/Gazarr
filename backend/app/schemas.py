@@ -183,12 +183,16 @@ class AppConfigBase(BaseModel):
     auto_download_enabled: bool = False
     auto_download_interval: float = Field(default=900.0, ge=30, le=86400)
     auto_download_max_results: int = Field(default=1, ge=1, le=10)
+    auto_fail_enabled: bool = False
+    auto_fail_hours: float = Field(default=12.0, ge=1, le=168)
 
 
 class AppConfigUpdate(BaseModel):
     auto_download_enabled: Optional[bool] = None
     auto_download_interval: Optional[float] = Field(default=None, ge=30, le=86400)
     auto_download_max_results: Optional[int] = Field(default=None, ge=1, le=10)
+    auto_fail_enabled: Optional[bool] = None
+    auto_fail_hours: Optional[float] = Field(default=None, ge=1, le=168)
 
 
 class AppConfigRead(AppConfigBase):

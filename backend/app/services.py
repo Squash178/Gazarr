@@ -375,6 +375,8 @@ def get_app_config(session: Session) -> AppConfig:
         auto_download_enabled=settings.auto_download_enabled,
         auto_download_interval=settings.auto_download_interval,
         auto_download_max_results=settings.auto_download_max_results,
+        auto_fail_enabled=settings.auto_fail_enabled,
+        auto_fail_hours=settings.auto_fail_hours,
         created_at=now,
         updated_at=now,
     )

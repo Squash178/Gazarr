@@ -174,6 +174,8 @@ export type AppConfig = {
   auto_download_enabled: boolean;
   auto_download_interval: number;
   auto_download_max_results: number;
+  auto_fail_enabled: boolean;
+  auto_fail_hours: number;
   created_at: string;
   updated_at: string;
 };
@@ -182,6 +184,8 @@ export type AppConfigPayload = {
   auto_download_enabled?: boolean;
   auto_download_interval?: number | null;
   auto_download_max_results?: number | null;
+  auto_fail_enabled?: boolean;
+  auto_fail_hours?: number | null;
 };
 
 export const api = {

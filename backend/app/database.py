@@ -19,6 +19,7 @@ def init_db() -> None:
     _ensure_language_column()
     _ensure_magazine_interval_columns()
     _ensure_download_job_columns()
+    _ensure_app_config_columns()
 
 
 def get_session() -> Iterator[Session]:
@@ -74,5 +75,23 @@ def _ensure_magazine_interval_columns() -> None:
         try:
             with engine.begin() as connection:
                 connection.exec_driver_sql(f"ALTER TABLE magazine ADD COLUMN {column} {ddl_type}")
+        except OperationalError:
+            continue
+
+
+def _ensure_app_config_columns() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+    columns = {
+        "auto_download_enabled": "BOOLEAN",
+        "auto_download_interval": "REAL",
+        "auto_download_max_results": "INTEGER",
+        "auto_fail_enabled": "BOOLEAN",
+        "auto_fail_hours": "REAL",
+    }
+    for column, ddl_type in columns.items():
+        try:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(f"ALTER TABLE appconfig ADD COLUMN {column} {ddl_type}")
         except OperationalError:
             continue

@@ -70,3 +70,5 @@ Gazarr can automatically look for new issues and enqueue them in SABnzbd. Use th
 Each magazine can also be given an “auto-download start” year and issue number from the dashboard. Gazarr will ignore any releases at or before that marker so you can seed the catalog at a known point (e.g. “start at 2023 issue #350”) without bulk-downloading older history.
 
 Need an immediate refresh? Hit the “Scan auto downloads” button in the dashboard header to run the background search loop on demand.
+
+You can also enable the “Auto fail stuck downloads” option in the same settings panel. When active, Gazarr watches SABnzbd queue progress and automatically marks any job as failed if it hasn’t reported progress within your chosen number of hours.

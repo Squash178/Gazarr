@@ -28,6 +28,13 @@ class IssueState:
     links: Set[str] = field(default_factory=set)
 
 
+@dataclass(frozen=True)
+class MagazineGuard:
+    min_year: Optional[int]
+    min_issue: Optional[int]
+    tokens: Set[str]
+
+
 class AutoDownloader:
     """Periodically searches providers and enqueues new issues automatically."""
 
@@ -102,9 +109,9 @@ class AutoDownloader:
                     logger.debug("Auto downloader scan produced no search results.")
                     return 0
 
-                job_index = self._build_job_index(session)
-                thresholds = self._load_thresholds(session)
-                candidates = self._select_candidates(results, job_index, thresholds)
+            job_index = self._build_job_index(session)
+            guards = self._load_guards(session)
+            candidates = self._select_candidates(results, job_index, guards)
                 if not candidates:
                     logger.debug("Auto downloader found no candidates to enqueue.")
                     return 0
@@ -184,7 +191,7 @@ class AutoDownloader:
         self,
         results: Iterable[SearchResult],
         job_index: Dict[str, IssueState],
-        thresholds: Dict[str, Tuple[Optional[int], Optional[int]]],
+        guards: Dict[str, MagazineGuard],
     ) -> List[Tuple[str, SearchResult]]:
         selections: List[Tuple[str, SearchResult]] = []
         per_magazine_count: Dict[str, int] = {}
@@ -193,8 +200,8 @@ class AutoDownloader:
             if not magazine:
                 continue
             magazine_key = magazine.lower()
-            limit = thresholds.get(magazine_key)
-            if limit and not self._passes_threshold(result, limit):
+            guard = guards.get(magazine_key)
+            if guard and not self._passes_guard(result, guard):
                 continue
             issue_key = _issue_identifier(
                 result.magazine_title,
@@ -226,40 +233,54 @@ class AutoDownloader:
         if link:
             bucket.links.add(link)
 
-    def _load_thresholds(self, session: Session) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
-        limits: Dict[str, Tuple[Optional[int], Optional[int]]] = {}
-        statement = select(Magazine.title, Magazine.auto_download_since_year, Magazine.auto_download_since_issue)
+    def _load_guards(self, session: Session) -> Dict[str, MagazineGuard]:
+        guards: Dict[str, MagazineGuard] = {}
+        statement = select(
+            Magazine.title,
+            Magazine.auto_download_since_year,
+            Magazine.auto_download_since_issue,
+        )
         for title, since_year, since_issue in session.exec(statement):
-            if since_year is None and since_issue is None:
+            if not title:
                 continue
             key = title.strip().lower()
-            limits[key] = (since_year, since_issue)
-        return limits
+            tokens = _extract_title_tokens(title)
+            guards[key] = MagazineGuard(min_year=since_year, min_issue=since_issue, tokens=tokens)
+        return guards
 
     @staticmethod
-    def _passes_threshold(result: SearchResult, threshold: Tuple[Optional[int], Optional[int]]) -> bool:
-        min_year, min_issue = threshold
-        if min_year is None and min_issue is None:
+    def _passes_guard(result: SearchResult, guard: MagazineGuard) -> bool:
+        if guard.min_year is None and guard.min_issue is None and not guard.tokens:
             return True
         issue_year = result.issue_year
         issue_number = result.issue_number
-        if min_year is not None:
+        if guard.min_year is not None:
             if issue_year is None:
                 return False
-            if issue_year < min_year:
+            if issue_year < guard.min_year:
                 return False
-            if issue_year > min_year:
+            if issue_year > guard.min_year:
                 return True
             # same year
-            if min_issue is None:
+            if guard.min_issue is None:
                 return True
             if issue_number is None:
                 return False
-            return issue_number > min_issue
+            if issue_number <= guard.min_issue:
+                return False
+        elif guard.min_issue is not None:
+            if issue_number is None or issue_number <= guard.min_issue:
+                return False
+
+        if guard.tokens:
+            normalized_title_tokens = set(_normalize_text(result.title or "").split())
+            if not normalized_title_tokens:
+                return False
+            for token in guard.tokens:
+                if token not in normalized_title_tokens:
+                    return False
         # Only issue threshold specified
-        if issue_number is None:
-            return False
-        return issue_number > min_issue
+        return True
 
 
 def _issue_identifier(
@@ -287,3 +308,17 @@ def _issue_identifier(
     if fallback_title:
         return f"{prefix}::title::{fallback_title.strip().lower()}"
     return None
+
+
+STOP_WORDS = {"mag", "magazine", "ebook", "digital", "issue", "revista"}
+
+
+def _extract_title_tokens(title: str) -> Set[str]:
+    normalized = _normalize_text(title)
+    tokens = {token for token in normalized.split() if len(token) >= 3 and token not in STOP_WORDS}
+    return tokens
+
+
+def _normalize_text(value: str) -> str:
+    cleaned = "".join(ch.lower() if ch.isalnum() or ch.isspace() else " " for ch in value)
+    return " ".join(cleaned.split())

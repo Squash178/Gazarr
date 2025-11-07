@@ -35,6 +35,8 @@ class Settings(BaseSettings):
         ge=1,
         description="Maximum NZBs enqueued per magazine in a single auto-download scan.",
     )
+    auto_fail_enabled: bool = Field(default=False, description="Automatically fail SABnzbd jobs that appear stuck.")
+    auto_fail_hours: float = Field(default=12.0, description="Hours before a stuck job is automatically failed.")
     auth_username: Optional[str] = Field(default=None, description="HTTP basic auth username required for API access.")
     auth_password: Optional[str] = Field(default=None, description="HTTP basic auth password required for API access.")
 

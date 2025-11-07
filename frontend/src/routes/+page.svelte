@@ -91,7 +91,9 @@
   const appConfigForm = {
     auto_download_enabled: false,
     auto_download_interval: '',
-    auto_download_max_results: ''
+    auto_download_max_results: '',
+    auto_fail_enabled: false,
+    auto_fail_hours: ''
   };
 
   const parseOptionalInt = (value: string) => {
@@ -191,6 +193,8 @@
       appConfigForm.auto_download_enabled = appConfig.auto_download_enabled;
       appConfigForm.auto_download_interval = String(appConfig.auto_download_interval ?? '');
       appConfigForm.auto_download_max_results = String(appConfig.auto_download_max_results ?? '');
+      appConfigForm.auto_fail_enabled = appConfig.auto_fail_enabled;
+      appConfigForm.auto_fail_hours = String(appConfig.auto_fail_hours ?? '');
     } catch (err) {
       console.error('Failed to load app config', err);
       appConfig = null;
@@ -568,12 +572,16 @@
     try {
       const intervalInput = appConfigForm.auto_download_interval.trim();
       const maxInput = appConfigForm.auto_download_max_results.trim();
+      const failHoursInput = appConfigForm.auto_fail_hours.trim();
       const intervalValue = intervalInput === '' ? undefined : Number(intervalInput);
       const maxValue = maxInput === '' ? undefined : Number(maxInput);
+      const failHoursValue = failHoursInput === '' ? undefined : Number(failHoursInput);
       const payload: AppConfigPayload = {
         auto_download_enabled: appConfigForm.auto_download_enabled,
         auto_download_interval: intervalValue !== undefined && Number.isFinite(intervalValue) ? intervalValue : undefined,
-        auto_download_max_results: maxValue !== undefined && Number.isFinite(maxValue) ? maxValue : undefined
+        auto_download_max_results: maxValue !== undefined && Number.isFinite(maxValue) ? maxValue : undefined,
+        auto_fail_enabled: appConfigForm.auto_fail_enabled,
+        auto_fail_hours: failHoursValue !== undefined && Number.isFinite(failHoursValue) ? failHoursValue : undefined
       };
       await withToast(
         async () => {
@@ -582,6 +590,8 @@
           appConfigForm.auto_download_enabled = updated.auto_download_enabled;
           appConfigForm.auto_download_interval = String(updated.auto_download_interval ?? '');
           appConfigForm.auto_download_max_results = String(updated.auto_download_max_results ?? '');
+          appConfigForm.auto_fail_enabled = updated.auto_fail_enabled;
+          appConfigForm.auto_fail_hours = String(updated.auto_fail_hours ?? '');
         },
         'Auto-download settings saved'
       );
@@ -927,6 +937,29 @@
               disabled={!appConfigForm.auto_download_enabled}
             />
             <small>Prevents flooding SABnzbd if multiple matches appear.</small>
+          </div>
+        </div>
+        <hr style="border: 0; border-top: 1px solid rgba(148, 163, 184, 0.2); margin: 1.5rem 0;" />
+        <div class="input-field">
+          <label style="display: flex; align-items: center; gap: 0.55rem;">
+            <input type="checkbox" bind:checked={appConfigForm.auto_fail_enabled} />
+            Auto fail stuck downloads
+          </label>
+        </div>
+        <div class="grid" style="gap: 1rem; margin-top: 1rem;">
+          <div class="input-field">
+            <label for="auto-fail-hours">Fail after (hours)</label>
+            <input
+              id="auto-fail-hours"
+              type="number"
+              min="1"
+              max="168"
+              step="1"
+              bind:value={appConfigForm.auto_fail_hours}
+              placeholder="12"
+              disabled={!appConfigForm.auto_fail_enabled}
+            />
+            <small>Jobs older than this (without progress) are marked failed automatically.</small>
           </div>
         </div>
       {/if}
