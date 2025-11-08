@@ -707,8 +707,8 @@ def update_download_job_status(
         job.issue_number = issue_number
         updated = True
 
-    job.last_seen = now
     if updated:
+        job.last_seen = now
         job.updated_at = now
 
     session.add(job)
