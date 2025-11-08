@@ -177,7 +177,7 @@ class DownloadTracker:
                         completed_at=history_item.completed,
                     )
                 elif self.config.debug_logging:
-                    logger.debug(
+                    logger.info(
                         "Download tracker could not locate SAB entry for job_id=%s nzo_id=%s title=%s status=%s",
                         job.id,
                         nzo_id,
@@ -238,7 +238,7 @@ class DownloadTracker:
     def _log_debug_snapshot(self, queue_items, history_items) -> None:
         if queue_items:
             for item in queue_items:
-                logger.debug(
+                logger.info(
                     "SAB queue item: nzo_id=%s status=%s perc=%s timeleft=%s filename=%s",
                     item.nzo_id,
                     item.status,
@@ -247,10 +247,10 @@ class DownloadTracker:
                     item.filename,
                 )
         else:
-            logger.debug("SAB queue empty.")
+            logger.info("SAB queue empty.")
         if history_items:
             for item in history_items:
-                logger.debug(
+                logger.info(
                     "SAB history item: nzo_id=%s status=%s completed=%s name=%s fail=%s",
                     item.nzo_id,
                     item.status,
@@ -259,7 +259,7 @@ class DownloadTracker:
                     item.fail_message,
                 )
         else:
-            logger.debug("SAB history snapshot empty.")
+            logger.info("SAB history snapshot empty.")
 
     @staticmethod
     def _log_job_update(
@@ -274,7 +274,7 @@ class DownloadTracker:
         message: Optional[str],
         content: Optional[str],
     ) -> None:
-        logger.debug(
+        logger.info(
             "Tracker update (%s): job_id=%s nzo_id=%s status=%s sab_status=%s progress=%s time_remaining=%s message=%s content=%s",
             source,
             job_id,

@@ -760,9 +760,9 @@
   async function handleSaveAppConfig() {
     savingAppConfig = true;
     try {
-      const intervalInput = appConfigForm.auto_download_interval.trim();
-      const maxInput = appConfigForm.auto_download_max_results.trim();
-      const failMinutesInput = appConfigForm.auto_fail_minutes.trim();
+      const intervalInput = String(appConfigForm.auto_download_interval ?? '').trim();
+      const maxInput = String(appConfigForm.auto_download_max_results ?? '').trim();
+      const failMinutesInput = String(appConfigForm.auto_fail_minutes ?? '').trim();
       const intervalValue = intervalInput === '' ? undefined : Number(intervalInput);
       const maxValue = maxInput === '' ? undefined : Number(maxInput);
       const failMinutesValue = failMinutesInput === '' ? undefined : Number(failMinutesInput);
