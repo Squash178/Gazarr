@@ -269,10 +269,10 @@ class AutoDownloader:
                 return True
             if issue_number is None:
                 return False
-            if issue_number <= guard.min_issue:
+            if issue_number < guard.min_issue:
                 return False
         elif guard.min_issue is not None:
-            if issue_number is None or issue_number <= guard.min_issue:
+            if issue_number is None or issue_number < guard.min_issue:
                 return False
 
         if guard.tokens:

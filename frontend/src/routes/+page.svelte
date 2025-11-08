@@ -1186,7 +1186,6 @@
               id="auto-max"
               type="number"
               min="1"
-              max="5"
               bind:value={appConfigForm.auto_download_max_results}
               placeholder="1"
               disabled={!appConfigForm.auto_download_enabled}

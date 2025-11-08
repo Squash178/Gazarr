@@ -207,6 +207,7 @@ def _strip_and_apply_metadata(
 
     # 1) Re-write the PDF to strip existing metadata and set standard Info keys only
     reader = PdfReader(str(pdf_path))
+    page_count = len(reader.pages)
     writer = PdfWriter()
     for page in reader.pages:
         writer.add_page(page)
@@ -219,6 +220,8 @@ def _strip_and_apply_metadata(
         pdf_timestamp = _format_pdf_timestamp(published_date)
         info_metadata["/CreationDate"] = pdf_timestamp
         info_metadata["/ModDate"] = pdf_timestamp
+    if page_count:
+        info_metadata["/PageCount"] = str(page_count)
     writer.add_metadata(info_metadata)
 
     temp_path = pdf_path.with_suffix(".tmp.pdf")
@@ -238,6 +241,8 @@ def _strip_and_apply_metadata(
             if published_iso:
                 current_meta["creationDate"] = published_iso
                 current_meta["modDate"] = published_iso
+            if page_count:
+                current_meta["page_count"] = str(page_count)
             doc.set_metadata(current_meta)
         except Exception:
             # Non-fatal; continue to set XMP
@@ -261,6 +266,7 @@ def _strip_and_apply_metadata(
             if series_index_value is not None
             else None
         )
+        page_count_xml = xml_escape(str(page_count), {"'": "&apos;", '"': "&quot;"}) if page_count else None
 
         # Minimal XMP packet with Dublin Core + Calibre extensions when available
         description_lines = [
@@ -306,6 +312,13 @@ def _strip_and_apply_metadata(
                     "      </dc:date>",
                 ]
             )
+        if page_count_xml:
+            description_lines.extend(
+                [
+                    f"      <pdf:PageCount>{page_count_xml}</pdf:PageCount>",
+                    f"      <xmpTPg:NumPages>{page_count_xml}</xmpTPg:NumPages>",
+                ]
+            )
         if series_xml or series_index_xml:
             description_lines.append("      <calibre:series rdf:parseType='Resource'>")
             description_lines.append(f"        <rdf:value>{series_xml or ''}</rdf:value>")
@@ -318,7 +331,7 @@ def _strip_and_apply_metadata(
         xmp_packet = f"""
 <?xpacket begin='\ufeff' id='W5M0MpCehiHzreSzNTczkc9d'?>
 <x:xmpmeta xmlns:x='adobe:ns:meta/'>
-  <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' xmlns:dc='http://purl.org/dc/elements/1.1/' xmlns:pdf='http://ns.adobe.com/pdf/1.3/' xmlns:calibre='http://calibre-ebook.com/xmp-namespace' xmlns:calibreSI='http://calibre-ebook.com/xmp-namespace/seriesIndex'>
+  <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' xmlns:dc='http://purl.org/dc/elements/1.1/' xmlns:pdf='http://ns.adobe.com/pdf/1.3/' xmlns:calibre='http://calibre-ebook.com/xmp-namespace' xmlns:calibreSI='http://calibre-ebook.com/xmp-namespace/seriesIndex' xmlns:xmpTPg='http://ns.adobe.com/xap/1.0/t/pg/'>
     <rdf:Description rdf:about=''>
 {description_block}
     </rdf:Description>
@@ -437,10 +450,13 @@ def _normalise_series_index(
             text = text.rstrip("0").rstrip(".")
         return text
 
-    if issue_number is not None:
-        return _format_decimal(Decimal(issue_number))
-
     if issue_year is not None:
+        if issue_number is not None:
+            try:
+                combined = Decimal(issue_year) + (Decimal(issue_number) / Decimal(100))
+                return _format_decimal(combined)
+            except InvalidOperation:
+                pass
         if issue_month is not None:
             try:
                 combined = Decimal(issue_year) + (Decimal(issue_month) / Decimal(100))
@@ -448,6 +464,9 @@ def _normalise_series_index(
             except InvalidOperation:
                 pass
         return str(issue_year)
+
+    if issue_number is not None:
+        return _format_decimal(Decimal(issue_number))
 
     if raw_series_index:
         cleaned = raw_series_index.strip()
