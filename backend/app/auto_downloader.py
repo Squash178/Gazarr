@@ -199,6 +199,7 @@ class AutoDownloader:
         guards: Dict[str, MagazineGuard],
     ) -> List[Tuple[str, SearchResult]]:
         selections: List[Tuple[str, SearchResult]] = []
+        seen_issue_keys: Set[str] = set()
         max_per_scan = max(1, self.config.max_results_per_scan)
         for result in results:
             if len(selections) >= max_per_scan:
@@ -220,6 +221,8 @@ class AutoDownloader:
             )
             if not issue_key:
                 continue
+            if issue_key in seen_issue_keys:
+                continue
             bucket = job_index.get(issue_key)
             if bucket:
                 if bucket.active:
@@ -228,6 +231,7 @@ class AutoDownloader:
                 if link_value in bucket.links:
                     continue
             selections.append((issue_key, result))
+            seen_issue_keys.add(issue_key)
         return selections
 
     def _mark_issue_active(self, job_index: Dict[str, IssueState], issue_key: str, link: Optional[str]) -> None:
