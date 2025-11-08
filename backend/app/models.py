@@ -84,6 +84,23 @@ class AppConfig(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
+class ProviderCategory(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    provider_id: int = Field(foreign_key="provider.id", nullable=False, index=True)
+    code: str = Field(min_length=1, description="Torznab/Newznab category code (e.g. 7110)")
+    name: str = Field(min_length=1, description="Friendly label for the category")
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class MagazineCategorySelection(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    magazine_id: int = Field(foreign_key="magazine.id", nullable=False, index=True)
+    provider_category_id: int = Field(foreign_key="providercategory.id", nullable=False, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
 class DownloadJob(SQLModel, table=True):
     """Tracks SABnzbd jobs and downstream processing stages."""
 

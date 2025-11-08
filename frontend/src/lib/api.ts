@@ -37,6 +37,15 @@ export type Provider = {
   updated_at: string;
 };
 
+export type ProviderCategory = {
+  id: number;
+  provider_id: number;
+  code: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Magazine = {
   id: number;
   title: string;
@@ -188,6 +197,24 @@ export type AppConfigPayload = {
   auto_fail_minutes?: number | null;
 };
 
+export type ProviderCategoryOption = {
+  id: number;
+  provider_id: number;
+  provider_name: string;
+  code: string;
+  name: string;
+  selected: boolean;
+};
+
+export type ProviderCategoryPayload = {
+  code: string;
+  name: string;
+};
+
+export type MagazineCategoryPayload = {
+  provider_category_ids: number[];
+};
+
 export const api = {
   getProviders: () => request<Provider[]>('/providers'),
   createProvider: (payload: Partial<Provider>) =>
@@ -195,6 +222,14 @@ export const api = {
   updateProvider: (id: number, payload: Partial<Provider>) =>
     request<Provider>(`/providers/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteProvider: (id: number) => request<void>(`/providers/${id}`, { method: 'DELETE' }),
+  getProviderCategories: (providerId: number) => request<ProviderCategory[]>(`/providers/${providerId}/categories`),
+  createProviderCategory: (providerId: number, payload: ProviderCategoryPayload) =>
+    request<ProviderCategory>(`/providers/${providerId}/categories`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  deleteProviderCategory: (providerId: number, categoryId: number) =>
+    request<void>(`/providers/${providerId}/categories/${categoryId}`, { method: 'DELETE' }),
 
   getMagazines: () => request<Magazine[]>('/magazines'),
   createMagazine: (payload: Partial<Magazine>) =>
@@ -202,6 +237,12 @@ export const api = {
   updateMagazine: (id: number, payload: Partial<Magazine>) =>
     request<Magazine>(`/magazines/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteMagazine: (id: number) => request<void>(`/magazines/${id}`, { method: 'DELETE' }),
+  getMagazineCategories: (id: number) => request<ProviderCategoryOption[]>(`/magazines/${id}/categories`),
+  updateMagazineCategories: (id: number, payload: MagazineCategoryPayload) =>
+    request<ProviderCategoryOption[]>(`/magazines/${id}/categories`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    }),
 
   runSearch: (titles?: string[]) =>
     request<SearchResult[]>('/magazines/search', {

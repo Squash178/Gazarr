@@ -19,28 +19,32 @@ from sqlmodel import Session
 from .database import engine, get_session, init_db
 from .models import AppConfig, DownloadJob, Magazine, Provider, SabnzbdConfig
 from .schemas import (
+    AppConfigRead,
+    AppConfigUpdate,
+    AutoDownloadScanResponse,
+    DownloadClearResponse,
+    DownloadJobRead,
+    DownloadQueueEntry,
+    DownloadQueueResponse,
     HealthResponse,
+    MagazineCategoryUpdate,
     MagazineCreate,
     MagazineRead,
     MagazineUpdate,
+    ProviderCategoryCreate,
+    ProviderCategoryOption,
+    ProviderCategoryRead,
     ProviderCreate,
     ProviderRead,
     ProviderUpdate,
-    SearchRequest,
-    SearchResult,
     SabnzbdConfigRead,
     SabnzbdConfigUpdate,
-    DownloadQueueEntry,
-    DownloadJobRead,
-    DownloadQueueResponse,
-    DownloadClearResponse,
     SabnzbdEnqueueRequest,
     SabnzbdEnqueueResponse,
     SabnzbdStatus,
     SabnzbdTestResponse,
-    AutoDownloadScanResponse,
-    AppConfigRead,
-    AppConfigUpdate,
+    SearchRequest,
+    SearchResult,
 )
 from .settings import get_settings
 from .sabnzbd import (
@@ -54,27 +58,32 @@ from .auto_downloader import AutoDownloadConfig, AutoDownloader
 from .download_monitor import DownloadMonitor, MonitorConfig, describe_downloads
 from .download_tracker import DownloadTracker, TrackerConfig
 from .services import (
+    clear_download_jobs,
     create_magazine,
     create_provider,
+    create_provider_category,
+    delete_download_job,
     delete_magazine,
     delete_provider,
+    delete_provider_category,
+    get_app_config,
     get_magazine,
     get_provider,
+    get_provider_category,
     get_sabnzbd_config,
     get_sabnzbd_connection,
+    list_magazine_category_options,
     list_magazines,
+    list_provider_categories,
     list_providers,
     list_recent_download_jobs,
-    upsert_download_job,
-    list_recent_download_jobs,
     search_magazines,
-    update_sabnzbd_config,
+    set_magazine_categories,
+    update_app_config,
     update_magazine,
     update_provider,
-    clear_download_jobs,
-    delete_download_job,
-    get_app_config,
-    update_app_config,
+    update_sabnzbd_config,
+    upsert_download_job,
 )
 
 app = FastAPI(title="Gazarr API")
@@ -274,6 +283,37 @@ def delete_provider_endpoint(provider_id: int, session: Session = Depends(get_se
     delete_provider(session, provider)
 
 
+@app.get("/providers/{provider_id}/categories", response_model=List[ProviderCategoryRead])
+def list_provider_categories_endpoint(provider_id: int, session: Session = Depends(get_session)) -> List[ProviderCategoryRead]:
+    provider = get_provider(session, provider_id)
+    if not provider:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+    return list_provider_categories(session, provider)
+
+
+@app.post("/providers/{provider_id}/categories", response_model=ProviderCategoryRead, status_code=status.HTTP_201_CREATED)
+def create_provider_category_endpoint(
+    provider_id: int,
+    payload: ProviderCategoryCreate,
+    session: Session = Depends(get_session),
+) -> ProviderCategoryRead:
+    provider = get_provider(session, provider_id)
+    if not provider:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+    return create_provider_category(session, provider, payload)
+
+
+@app.delete("/providers/{provider_id}/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_provider_category_endpoint(provider_id: int, category_id: int, session: Session = Depends(get_session)) -> None:
+    provider = get_provider(session, provider_id)
+    if not provider:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+    category = get_provider_category(session, provider, category_id)
+    if not category:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+    delete_provider_category(session, category)
+
+
 # Magazines --------------------------------------------------------------------
 
 
@@ -303,6 +343,27 @@ def delete_magazine_endpoint(magazine_id: int, session: Session = Depends(get_se
     if not magazine:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Magazine not found")
     delete_magazine(session, magazine)
+
+
+@app.get("/magazines/{magazine_id}/categories", response_model=List[ProviderCategoryOption])
+def list_magazine_categories_endpoint(magazine_id: int, session: Session = Depends(get_session)) -> List[ProviderCategoryOption]:
+    magazine = get_magazine(session, magazine_id)
+    if not magazine:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Magazine not found")
+    return list_magazine_category_options(session, magazine)
+
+
+@app.put("/magazines/{magazine_id}/categories", response_model=List[ProviderCategoryOption])
+def update_magazine_categories_endpoint(
+    magazine_id: int,
+    payload: MagazineCategoryUpdate,
+    session: Session = Depends(get_session),
+) -> List[ProviderCategoryOption]:
+    magazine = get_magazine(session, magazine_id)
+    if not magazine:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Magazine not found")
+    set_magazine_categories(session, magazine, payload.provider_category_ids)
+    return list_magazine_category_options(session, magazine)
 
 
 # Search -----------------------------------------------------------------------

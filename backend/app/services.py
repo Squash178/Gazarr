@@ -4,18 +4,29 @@ import shutil
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 from xml.etree import ElementTree as ET
 
 import httpx
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, delete, select
 
-from .models import AppConfig, DownloadJob, Magazine, Provider, SabnzbdConfig
+from .models import (
+    AppConfig,
+    DownloadJob,
+    Magazine,
+    MagazineCategorySelection,
+    Provider,
+    ProviderCategory,
+    SabnzbdConfig,
+)
 from .schemas import (
     AppConfigUpdate,
+    MagazineCategoryUpdate,
     MagazineCreate,
     MagazineUpdate,
+    ProviderCategoryCreate,
+    ProviderCategoryOption,
     ProviderCreate,
     ProviderUpdate,
     SabnzbdConfigUpdate,
@@ -71,6 +82,44 @@ def delete_provider(session: Session, provider: Provider) -> None:
     session.commit()
 
 
+def list_provider_categories(session: Session, provider: Provider) -> List[ProviderCategory]:
+    statement = select(ProviderCategory).where(ProviderCategory.provider_id == provider.id).order_by(ProviderCategory.created_at)
+    return list(session.exec(statement))
+
+
+def get_provider_category(session: Session, provider: Provider, category_id: int) -> Optional[ProviderCategory]:
+    statement = select(ProviderCategory).where(
+        ProviderCategory.id == category_id,
+        ProviderCategory.provider_id == provider.id,
+    )
+    return session.exec(statement).first()
+
+
+def create_provider_category(session: Session, provider: Provider, payload: ProviderCategoryCreate) -> ProviderCategory:
+    now = datetime.utcnow()
+    category = ProviderCategory(
+        provider_id=provider.id,
+        code=payload.code.strip(),
+        name=payload.name.strip(),
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(category)
+    session.commit()
+    session.refresh(category)
+    return category
+
+
+def delete_provider_category(session: Session, category: ProviderCategory) -> None:
+    session.exec(
+        delete(MagazineCategorySelection).where(
+            MagazineCategorySelection.provider_category_id == category.id
+        )
+    )
+    session.delete(category)
+    session.commit()
+
+
 # Magazine CRUD -----------------------------------------------------------------
 
 def list_magazines(session: Session, status: Optional[str] = None) -> List[Magazine]:
@@ -118,6 +167,88 @@ def update_magazine(session: Session, magazine: Magazine, payload: MagazineUpdat
 def delete_magazine(session: Session, magazine: Magazine) -> None:
     session.delete(magazine)
     session.commit()
+
+
+def list_magazine_category_options(session: Session, magazine: Magazine) -> List[ProviderCategoryOption]:
+    providers = {provider.id: provider for provider in list_providers(session)}
+    statement = select(ProviderCategory).order_by(ProviderCategory.provider_id, ProviderCategory.name)
+    categories = list(session.exec(statement))
+    selected_ids = {
+        item.provider_category_id
+        for item in session.exec(
+            select(MagazineCategorySelection).where(MagazineCategorySelection.magazine_id == magazine.id)
+        )
+    }
+    options: List[ProviderCategoryOption] = []
+    for category in categories:
+        provider = providers.get(category.provider_id)
+        if not provider:
+            continue
+        options.append(
+            ProviderCategoryOption(
+                id=category.id,
+                provider_id=category.provider_id,
+                provider_name=provider.name,
+                code=category.code,
+                name=category.name,
+                selected=category.id in selected_ids,
+            )
+        )
+    return options
+
+
+def set_magazine_categories(session: Session, magazine: Magazine, category_ids: List[int]) -> None:
+    existing_ids = {
+        item.provider_category_id
+        for item in session.exec(
+            select(MagazineCategorySelection).where(MagazineCategorySelection.magazine_id == magazine.id)
+        )
+    }
+    target_ids: Set[int] = set()
+    if category_ids:
+        target_ids = {
+            cid
+            for cid in category_ids
+            if session.get(ProviderCategory, cid) is not None
+        }
+    to_remove = existing_ids - target_ids
+    to_add = target_ids - existing_ids
+    if to_remove:
+        session.exec(
+            delete(MagazineCategorySelection).where(
+                MagazineCategorySelection.magazine_id == magazine.id,
+                MagazineCategorySelection.provider_category_id.in_(to_remove),
+            )
+        )
+    now = datetime.utcnow()
+    for category_id in to_add:
+        session.add(
+            MagazineCategorySelection(
+                magazine_id=magazine.id,
+                provider_category_id=category_id,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    if not to_add and not to_remove:
+        return
+    session.commit()
+
+
+def _build_magazine_category_map(session: Session) -> Dict[Tuple[int, int], List[str]]:
+    mapping: Dict[Tuple[int, int], List[str]] = {}
+    statement = (
+        select(
+            MagazineCategorySelection.magazine_id,
+            ProviderCategory.provider_id,
+            ProviderCategory.code,
+        )
+        .join(ProviderCategory, ProviderCategory.id == MagazineCategorySelection.provider_category_id)
+    )
+    for magazine_id, provider_id, code in session.exec(statement):
+        key = (magazine_id, provider_id)
+        mapping.setdefault(key, []).append(code)
+    return mapping
 
 
 # Search ------------------------------------------------------------------------
@@ -179,13 +310,18 @@ async def search_magazines(
     if not magazines or not providers:
         return []
 
+    category_map = _build_magazine_category_map(session)
+
     async with httpx.AsyncClient(timeout=settings.torznab_timeout) as client:
         tasks = []
         for provider in providers:
             if "M" not in provider.download_types.upper():
                 continue
             for magazine, term in _iter_search_terms(magazines):
-                tasks.append(_query_provider(client, provider, magazine, term))
+                categories = None
+                if magazine.id is not None:
+                    categories = category_map.get((magazine.id, provider.id))
+                tasks.append(_query_provider(client, provider, magazine, term, categories))
 
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -210,8 +346,11 @@ async def _query_provider(
     provider: Provider,
     magazine: Magazine,
     term: str,
+    categories: Optional[List[str]] = None,
 ) -> List[SearchResult]:
     params = {"apikey": provider.api_key, "t": "search", "q": term}
+    if categories:
+        params["cat"] = ",".join(sorted(set(categories)))
     url = _normalise_provider_url(provider.base_url)
     response = await client.get(url, params=params)
     response.raise_for_status()

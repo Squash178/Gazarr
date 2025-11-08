@@ -33,6 +33,25 @@ class ProviderRead(ProviderBase):
         from_attributes = True
 
 
+class ProviderCategoryBase(BaseModel):
+    code: constr(strip_whitespace=True, min_length=1)
+    name: constr(strip_whitespace=True, min_length=1)
+
+
+class ProviderCategoryCreate(ProviderCategoryBase):
+    pass
+
+
+class ProviderCategoryRead(ProviderCategoryBase):
+    id: int
+    provider_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class MagazineBase(BaseModel):
     title: constr(strip_whitespace=True, min_length=1)
     regex: Optional[constr(strip_whitespace=True, min_length=1)] = None
@@ -202,6 +221,19 @@ class AppConfigRead(AppConfigBase):
 
     class Config:
         from_attributes = True
+
+
+class ProviderCategoryOption(BaseModel):
+    id: int
+    provider_id: int
+    provider_name: str
+    code: str
+    name: str
+    selected: bool
+
+
+class MagazineCategoryUpdate(BaseModel):
+    provider_category_ids: List[int] = Field(default_factory=list)
 
 
 class AutoDownloadScanResponse(BaseModel):

@@ -3,6 +3,8 @@
   import {
     api,
     type Provider,
+    type ProviderCategory,
+    type ProviderCategoryOption,
     type Magazine,
     type SearchResult,
     type SabnzbdStatus,
@@ -48,6 +50,16 @@
   let loadingDownloads = false;
   let clearingDownloads = false;
   let downloadsTimer: ReturnType<typeof setInterval> | null = null;
+  let providerCategories: Record<number, ProviderCategory[]> = {};
+  let providerCategoryForms: Record<number, { code: string; name: string }> = {};
+  let providerCategoriesOpen: number | null = null;
+  let providerCategoriesLoading = new Set<number>();
+  let categoryEditor: {
+    magazine: Magazine;
+    options: ProviderCategoryOption[];
+    loading: boolean;
+    saving: boolean;
+  } | null = null;
 
   let loadingProviders = false;
   let loadingMagazines = false;
@@ -114,6 +126,13 @@
     providerForm.enabled = true;
   };
 
+  const ensureProviderCategoryForm = (providerId: number) => {
+    if (!providerCategoryForms[providerId]) {
+      providerCategoryForms[providerId] = { code: '', name: '' };
+    }
+    return providerCategoryForms[providerId];
+  };
+
   const resetMagazineForm = () => {
     magazineForm.title = '';
     magazineForm.regex = '';
@@ -147,6 +166,7 @@
     loadingProviders = true;
     try {
       providers = await api.getProviders();
+      providers.forEach((provider) => ensureProviderCategoryForm(provider.id));
     } finally {
       loadingProviders = false;
     }
@@ -289,6 +309,21 @@
       .trim();
   }
 
+  function groupCategoryOptions(options: ProviderCategoryOption[]) {
+    const groups = new Map<number, { provider_id: number; provider_name: string; categories: ProviderCategoryOption[] }>();
+    for (const option of options) {
+      if (!groups.has(option.provider_id)) {
+        groups.set(option.provider_id, {
+          provider_id: option.provider_id,
+          provider_name: option.provider_name,
+          categories: []
+        });
+      }
+      groups.get(option.provider_id)?.categories.push(option);
+    }
+    return Array.from(groups.values());
+  }
+
   function setQueueing(link: string, active: boolean) {
     const next = new Set(queueingDownloads);
     if (active) {
@@ -332,6 +367,64 @@
         await loadProviders();
       },
       'Provider removed'
+    );
+  }
+
+  async function toggleProviderCategories(provider: Provider) {
+    if (providerCategoriesOpen === provider.id) {
+      providerCategoriesOpen = null;
+      return;
+    }
+    providerCategoriesOpen = provider.id;
+    ensureProviderCategoryForm(provider.id);
+    if (!providerCategories[provider.id]) {
+      await loadProviderCategories(provider.id);
+    }
+  }
+
+  async function loadProviderCategories(providerId: number) {
+    const loading = new Set(providerCategoriesLoading);
+    loading.add(providerId);
+    providerCategoriesLoading = loading;
+    try {
+      const categories = await api.getProviderCategories(providerId);
+      providerCategories = { ...providerCategories, [providerId]: categories };
+    } finally {
+      const next = new Set(providerCategoriesLoading);
+      next.delete(providerId);
+      providerCategoriesLoading = next;
+    }
+  }
+
+  async function handleCreateProviderCategory(provider: Provider) {
+    const form = ensureProviderCategoryForm(provider.id);
+    if (!form.code.trim() || !form.name.trim()) {
+      return;
+    }
+    await withToast(
+      async () => {
+        await api.createProviderCategory(provider.id, {
+          code: form.code.trim(),
+          name: form.name.trim()
+        });
+        form.code = '';
+        form.name = '';
+        await loadProviderCategories(provider.id);
+      },
+      'Category saved'
+    );
+  }
+
+  async function handleDeleteProviderCategory(provider: Provider, categoryId: number) {
+    if (!confirm('Remove this category?')) {
+      return;
+    }
+    await withToast(
+      async () => {
+        await api.deleteProviderCategory(provider.id, categoryId);
+        await loadProviderCategories(provider.id);
+      },
+      'Category removed'
     );
   }
 
@@ -393,6 +486,74 @@
       },
       'Magazine language updated'
     );
+  }
+
+  async function openCategoryEditor(magazine: Magazine) {
+    categoryEditor = {
+      magazine,
+      options: [],
+      loading: true,
+      saving: false
+    };
+    try {
+      const options = await api.getMagazineCategories(magazine.id);
+      categoryEditor = {
+        magazine,
+        options,
+        loading: false,
+        saving: false
+      };
+    } catch (err) {
+      categoryEditor = null;
+      toast = {
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to load categories'
+      };
+      setTimeout(() => (toast = null), 4200);
+    }
+  }
+
+  function toggleMagazineCategory(categoryId: number) {
+    if (!categoryEditor || categoryEditor.loading) {
+      return;
+    }
+    categoryEditor = {
+      ...categoryEditor,
+      options: categoryEditor.options.map((option) =>
+        option.id === categoryId ? { ...option, selected: !option.selected } : option
+      )
+    };
+  }
+
+  async function handleSaveMagazineCategories() {
+    if (!categoryEditor || categoryEditor.loading || categoryEditor.saving) {
+      return;
+    }
+    categoryEditor = { ...categoryEditor, saving: true };
+    try {
+      const selectedIds = categoryEditor.options.filter((option) => option.selected).map((option) => option.id);
+      const updated = await api.updateMagazineCategories(categoryEditor.magazine.id, {
+        provider_category_ids: selectedIds
+      });
+      categoryEditor = {
+        ...categoryEditor,
+        options: updated,
+        saving: false
+      };
+      toast = { type: 'success', message: 'Categories updated' };
+      setTimeout(() => (toast = null), 4200);
+    } catch (err) {
+      categoryEditor = categoryEditor ? { ...categoryEditor, saving: false } : null;
+      toast = {
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to save categories'
+      };
+      setTimeout(() => (toast = null), 4200);
+    }
+  }
+
+  function closeCategoryEditor() {
+    categoryEditor = null;
   }
 
   async function handleAutoStartChange(magazine: Magazine, field: AutoStartField, value: string) {
@@ -897,6 +1058,14 @@
                     <button
                       type="button"
                       class="btn-primary"
+                      style="margin-left: 0.5rem; padding: 0.45rem 1.1rem;"
+                      on:click={() => openCategoryEditor(magazine)}
+                    >
+                      Categories
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-primary"
                       style="margin-left: 0.5rem; padding: 0.45rem 1.1rem; background: rgba(248, 113, 113, 0.22); color: rgba(255, 255, 255, 0.85);"
                       on:click={() => handleDeleteMagazine(magazine)}
                     >
@@ -910,6 +1079,60 @@
         </table>
       </div>
     </section>
+
+    {#if categoryEditor}
+      <section class="surface" style="margin-bottom: 2rem;">
+        <div class="section-header">
+          <div>
+            <h2 style="margin: 0; font-size: 1.25rem;">Categories for {categoryEditor.magazine.title}</h2>
+            <p style="margin: 0.4rem 0 0; color: rgba(226, 232, 240, 0.6);">
+              Choose which provider categories Gazarr should search for this magazine.
+            </p>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button
+              type="button"
+              class="btn-primary"
+              on:click={handleSaveMagazineCategories}
+              disabled={categoryEditor.loading || categoryEditor.saving}
+            >
+              {categoryEditor.saving ? 'Saving…' : 'Save' }
+            </button>
+            <button type="button" class="btn-primary" on:click={closeCategoryEditor}>
+              Close
+            </button>
+          </div>
+        </div>
+
+        {#if categoryEditor.loading}
+          <p>Loading categories…</p>
+        {:else}
+          {#if categoryEditor.options.length}
+            {#each groupCategoryOptions(categoryEditor.options) as group}
+              <div class="category-group">
+                <strong>{group.provider_name}</strong>
+                <div class="category-options">
+                  {#each group.categories as option}
+                    <label class="category-option">
+                      <input
+                        type="checkbox"
+                        checked={option.selected}
+                        on:change={() => toggleMagazineCategory(option.id)}
+                      />
+                      <span>{option.code} – {option.name}</span>
+                    </label>
+                  {/each}
+                </div>
+              </div>
+            {/each}
+          {:else}
+            <p style="margin: 0; color: rgba(226, 232, 240, 0.7);">
+              No provider categories defined yet. Use the Providers section to add categories first.
+            </p>
+          {/if}
+        {/if}
+      </section>
+    {/if}
 
     <section class="surface" style="margin-bottom: 2rem;">
       <div class="section-header">
@@ -1406,6 +1629,14 @@
                     <button
                       type="button"
                       class="btn-primary"
+                      style="margin-left: 0.5rem; padding: 0.45rem 1.1rem;"
+                      on:click={() => toggleProviderCategories(provider)}
+                    >
+                      {providerCategoriesOpen === provider.id ? 'Hide categories' : 'Categories'}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-primary"
                       style="margin-left: 0.5rem; padding: 0.45rem 1.1rem; background: rgba(248, 113, 113, 0.22); color: rgba(255, 255, 255, 0.85);"
                       on:click={() => handleDeleteProvider(provider)}
                     >
@@ -1413,6 +1644,62 @@
                     </button>
                   </td>
                 </tr>
+                {#if providerCategoriesOpen === provider.id}
+                  <tr>
+                    <td colspan="5">
+                      <div class="provider-categories-panel">
+                        {#if providerCategoriesLoading.has(provider.id)}
+                          <p>Loading categories…</p>
+                        {:else}
+                          {#if providerCategories[provider.id]?.length}
+                            <div class="pill-group" style="flex-wrap: wrap; gap: 0.4rem;">
+                              {#each providerCategories[provider.id] as category}
+                                <span class="chip" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+                                  {category.code}: {category.name}
+                                  <button
+                                    type="button"
+                                    class="chip-btn"
+                                    on:click={() => handleDeleteProviderCategory(provider, category.id)}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              {/each}
+                            </div>
+                          {:else}
+                            <p style="margin: 0; color: rgba(226, 232, 240, 0.7);">No categories defined yet.</p>
+                          {/if}
+                        {/if}
+                        <div class="grid" style="margin-top: 1rem; gap: 0.75rem;">
+                          <div class="input-field">
+                            <label>Category code</label>
+                            <input
+                              bind:value={providerCategoryForms[provider.id].code}
+                              placeholder="7110"
+                              on:input={() => ensureProviderCategoryForm(provider.id)}
+                            />
+                          </div>
+                          <div class="input-field">
+                            <label>Label</label>
+                            <input
+                              bind:value={providerCategoryForms[provider.id].name}
+                              placeholder="e.g. Magazines"
+                              on:input={() => ensureProviderCategoryForm(provider.id)}
+                            />
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          class="btn-primary"
+                          style="margin-top: 0.75rem;"
+                          on:click={() => handleCreateProviderCategory(provider)}
+                        >
+                          + Add category
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                {/if}
               {/each}
             {/if}
           </tbody>
@@ -1464,6 +1751,41 @@
     background: rgba(59, 130, 246, 0.28);
     border-color: rgba(96, 165, 250, 0.6);
     color: rgba(255, 255, 255, 0.95);
+  }
+
+  .provider-categories-panel {
+    margin-top: 0.75rem;
+  }
+
+  .chip-btn {
+    background: transparent;
+    border: none;
+    color: rgba(248, 250, 252, 0.85);
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .category-group {
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 0.75rem;
+    padding: 0.9rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .category-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.6rem;
+  }
+
+  .category-option {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(15, 23, 42, 0.35);
+    border-radius: 0.5rem;
+    padding: 0.35rem 0.6rem;
   }
 
   .auto-guard {

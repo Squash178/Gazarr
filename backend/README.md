@@ -22,6 +22,8 @@ The API exposes:
 - `GET /downloads` – lists items currently in the watched downloads folder
 - `POST /sabnzbd/download` – forwards an NZB URL to SABnzbd
 - `POST /sabnzbd/test` – validates the SABnzbd configuration/API key
+- `GET/POST/DELETE /providers/{id}/categories` – manage Torznab/Newznab categories per provider
+- `GET/PUT /magazines/{id}/categories` – assign provider categories to magazines
 
 ## Seeding data
 
