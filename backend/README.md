@@ -69,7 +69,7 @@ The dashboard lets you clear the entire log or remove individual download entrie
 
 ## Automatic downloads
 
-Gazarr can automatically look for new issues and enqueue them in SABnzbd. Use the **Settings → Auto downloader** panel in the dashboard to toggle the background job, adjust the scan interval, and limit how many issues are queued per magazine. (The `GAZARR_AUTO_DOWNLOAD_*` variables only seed the initial defaults.)
+Gazarr can automatically look for new issues and enqueue them in SABnzbd. Use the **Settings → Auto downloader** panel in the dashboard to toggle the background job, adjust the scan interval in hours, and limit how many issues are queued per scan across all magazines. (The `GAZARR_AUTO_DOWNLOAD_*` variables only seed the initial defaults.)
 
 Each magazine can also be given an “auto-download start” year and issue number from the dashboard. Gazarr will ignore any releases at or before that marker so you can seed the catalog at a known point (e.g. “start at 2023 issue #350”) without bulk-downloading older history.
 

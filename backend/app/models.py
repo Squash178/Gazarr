@@ -72,8 +72,8 @@ class AppConfig(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     auto_download_enabled: bool = Field(default=False, description="Whether the background auto downloader runs.")
-    auto_download_interval: float = Field(default=900.0, description="Seconds between auto download scans.")
-    auto_download_max_results: int = Field(default=1, description="Max issues per magazine per scan.")
+    auto_download_interval: float = Field(default=12.0, description="Hours between auto download scans.")
+    auto_download_max_results: int = Field(default=1, description="Max issues enqueued per scan across all magazines.")
     auto_fail_enabled: bool = Field(default=False, description="Auto fail jobs stuck in SABnzbd.")
     auto_fail_minutes: float = Field(
         default=720.0,

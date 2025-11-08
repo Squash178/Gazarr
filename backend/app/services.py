@@ -507,6 +507,11 @@ def get_sabnzbd_connection(session: Session, config: Optional[SabnzbdConfig] = N
 def get_app_config(session: Session) -> AppConfig:
     config = session.exec(select(AppConfig).limit(1)).first()
     if config:
+        if _normalize_auto_download_interval(config):
+            config.updated_at = datetime.utcnow()
+            session.add(config)
+            session.commit()
+            session.refresh(config)
         _apply_app_config_defaults(config)
         return config
     settings = get_settings()
@@ -537,6 +542,11 @@ def update_app_config(session: Session, payload: AppConfigUpdate) -> AppConfig:
     session.add(config)
     session.commit()
     session.refresh(config)
+    if _normalize_auto_download_interval(config):
+        config.updated_at = datetime.utcnow()
+        session.add(config)
+        session.commit()
+        session.refresh(config)
     _apply_app_config_defaults(config)
     return config
 
@@ -553,6 +563,16 @@ def _apply_app_config_defaults(config: AppConfig) -> None:
         config.auto_fail_minutes = settings.auto_fail_minutes
     if getattr(config, "debug_logging", None) is None:
         config.debug_logging = settings.debug_logging
+
+
+def _normalize_auto_download_interval(config: AppConfig) -> bool:
+    interval = config.auto_download_interval
+    if interval is None:
+        return False
+    if interval > 48:
+        config.auto_download_interval = round(interval / 3600.0, 4)
+        return True
+    return False
 
 
 # Download jobs ----------------------------------------------------------------
@@ -778,9 +798,14 @@ def list_recent_download_jobs(session: Session, limit: int = 50) -> List[Downloa
 
 
 def list_active_download_jobs(session: Session) -> List[DownloadJob]:
-    statement = select(DownloadJob).where(
-        DownloadJob.status.in_(["pending", "queued", "downloading", "processing", "completed"])
-    )
+    """
+    Return jobs that still need attention from SAB tracking/auto-fail logic.
+
+    Anything that's already failed or moved is considered terminal and can be
+    omitted; every other status (including unexpected SAB strings such as
+    "extracting") stays in the active set so tracker updates keep flowing.
+    """
+    statement = select(DownloadJob).where(DownloadJob.status.notin_(["failed", "moved"]))
     return list(session.exec(statement))
 
 

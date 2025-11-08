@@ -197,11 +197,12 @@ def _setup_auto_downloader() -> Tuple[Optional[AutoDownloader], AppConfig]:
 
 
 def _auto_download_config_from_model(config: AppConfig) -> AutoDownloadConfig:
-    interval = config.auto_download_interval or get_settings().auto_download_interval
+    interval_hours = config.auto_download_interval or get_settings().auto_download_interval
+    interval = max(60.0, interval_hours * 3600.0)
     max_results = config.auto_download_max_results or get_settings().auto_download_max_results
     return AutoDownloadConfig(
         poll_interval=interval,
-        max_results_per_magazine=max_results,
+        max_results_per_scan=max_results,
     )
 
 

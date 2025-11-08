@@ -30,11 +30,11 @@ class Settings(BaseSettings):
     download_tracker_history_limit: int = Field(default=50, description="Number of SABnzbd history entries to inspect per poll.")
     debug_logging: bool = Field(default=False, description="Enable verbose debug logging output.")
     auto_download_enabled: bool = Field(default=False, description="Enable the automatic downloader background task.")
-    auto_download_interval: float = Field(default=900.0, description="Seconds between automatic download scans.")
+    auto_download_interval: float = Field(default=12.0, description="Hours between automatic download scans.")
     auto_download_max_results: int = Field(
         default=1,
         ge=1,
-        description="Maximum NZBs enqueued per magazine in a single auto-download scan.",
+        description="Maximum NZBs enqueued per scan in the auto downloader.",
     )
     auto_fail_enabled: bool = Field(default=False, description="Automatically fail SABnzbd jobs that appear stuck.")
     auto_fail_minutes: float = Field(default=720.0, description="Minutes before a stuck job is automatically failed.")
@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     def model_post_init(self, __context) -> None:
         if (self.auto_fail_minutes is None or self.auto_fail_minutes <= 0) and self.legacy_auto_fail_hours:
             self.auto_fail_minutes = self.legacy_auto_fail_hours * 60
+        if self.auto_download_interval and self.auto_download_interval > 48:
+            # Legacy values were stored as seconds; convert anything implausibly large into hours.
+            self.auto_download_interval = round(self.auto_download_interval / 3600.0, 4)
 
 
 @lru_cache

@@ -18,8 +18,12 @@ ACTIVE_JOB_STATUSES = {"pending", "queued", "downloading", "processing", "comple
 
 @dataclass(frozen=True)
 class AutoDownloadConfig:
-    poll_interval: float = 900.0
-    max_results_per_magazine: int = 1
+    poll_interval: float = 43200.0
+    max_results_per_scan: int = 1
+
+    @property
+    def poll_interval_hours(self) -> float:
+        return self.poll_interval / 3600.0
 
 
 @dataclass
@@ -50,9 +54,10 @@ class AutoDownloader:
         self._stop_event.clear()
         self._task = asyncio.create_task(self._run(), name="gazarr-auto-downloader")
         logger.info(
-            "Started auto downloader: poll=%ss max_results=%s",
+            "Started auto downloader: poll=%ss (~%.2fh) max_results_per_scan=%s",
             self.config.poll_interval,
-            self.config.max_results_per_magazine,
+            self.config.poll_interval_hours,
+            self.config.max_results_per_scan,
         )
 
     async def stop(self) -> None:
@@ -194,8 +199,10 @@ class AutoDownloader:
         guards: Dict[str, MagazineGuard],
     ) -> List[Tuple[str, SearchResult]]:
         selections: List[Tuple[str, SearchResult]] = []
-        per_magazine_count: Dict[str, int] = {}
+        max_per_scan = max(1, self.config.max_results_per_scan)
         for result in results:
+            if len(selections) >= max_per_scan:
+                break
             magazine = (result.magazine_title or "").strip()
             if not magazine:
                 continue
@@ -220,10 +227,6 @@ class AutoDownloader:
                 link_value = str(result.link)
                 if link_value in bucket.links:
                     continue
-            count = per_magazine_count.get(magazine_key, 0)
-            if count >= max(1, self.config.max_results_per_magazine):
-                continue
-            per_magazine_count[magazine_key] = count + 1
             selections.append((issue_key, result))
         return selections
 

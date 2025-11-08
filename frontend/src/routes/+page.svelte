@@ -1167,20 +1167,21 @@
         </div>
         <div class="grid" style="gap: 1rem; margin-top: 1rem;">
           <div class="input-field">
-            <label for="auto-interval">Scan interval (seconds)</label>
+            <label for="auto-interval">Scan interval (hours)</label>
             <input
               id="auto-interval"
               type="number"
-              min="60"
-              step="30"
+              min="0.25"
+              max="24"
+              step="0.25"
               bind:value={appConfigForm.auto_download_interval}
-              placeholder="900"
+              placeholder="12"
               disabled={!appConfigForm.auto_download_enabled}
             />
             <small>How long to wait between automatic scans.</small>
           </div>
           <div class="input-field">
-            <label for="auto-max">Max results per magazine</label>
+            <label for="auto-max">Max results per scan</label>
             <input
               id="auto-max"
               type="number"
@@ -1190,7 +1191,7 @@
               placeholder="1"
               disabled={!appConfigForm.auto_download_enabled}
             />
-            <small>Prevents flooding SABnzbd if multiple matches appear.</small>
+            <small>Stops the auto downloader after enqueuing this many issues.</small>
           </div>
         </div>
         <hr style="border: 0; border-top: 1px solid rgba(148, 163, 184, 0.2); margin: 1.5rem 0;" />

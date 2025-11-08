@@ -220,9 +220,10 @@ class DownloadTracker:
             return
         threshold = timedelta(minutes=threshold_minutes)
         now = datetime.utcnow()
-        watched_statuses = {"pending", "queued", "downloading", "processing", "paused"}
+        terminal_statuses = {"completed", "failed", "moved"}
         for job in list_active_download_jobs(session):
-            if job.status not in watched_statuses:
+            status_value = (job.status or "").lower()
+            if status_value in terminal_statuses:
                 continue
             reference = job.last_seen or job.updated_at or job.created_at
             if not reference:
