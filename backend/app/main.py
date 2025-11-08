@@ -169,14 +169,21 @@ def _setup_download_monitor() -> Optional[DownloadMonitor]:
 
 
 def _setup_download_tracker() -> DownloadTracker:
-    settings = get_settings()
-    config = TrackerConfig(
-        poll_interval=settings.download_tracker_poll_interval,
-        history_limit=settings.download_tracker_history_limit,
-    )
-    tracker = DownloadTracker(config)
+    with Session(engine) as session:
+        app_config = get_app_config(session)
+    tracker_config = _tracker_config_from_settings(app_config.debug_logging)
+    tracker = DownloadTracker(tracker_config)
     tracker.start()
     return tracker
+
+
+def _tracker_config_from_settings(debug_logging: bool) -> TrackerConfig:
+    settings = get_settings()
+    return TrackerConfig(
+        poll_interval=settings.download_tracker_poll_interval,
+        history_limit=settings.download_tracker_history_limit,
+        debug_logging=bool(debug_logging),
+    )
 
 
 def _setup_auto_downloader() -> Tuple[Optional[AutoDownloader], AppConfig]:
@@ -212,6 +219,13 @@ async def _sync_auto_downloader_state(app: FastAPI, config: AppConfig) -> None:
         if downloader:
             await downloader.stop()
             app.state.auto_downloader = None
+
+
+def _sync_download_tracker_state(app: FastAPI, config: AppConfig) -> None:
+    tracker: Optional[DownloadTracker] = getattr(app.state, "download_tracker", None)
+    if not tracker:
+        return
+    tracker.update_config(_tracker_config_from_settings(config.debug_logging))
 
 
 @app.on_event("startup")
@@ -399,6 +413,7 @@ async def update_app_config_endpoint(
 ) -> AppConfig:
     config = update_app_config(session, payload)
     await _sync_auto_downloader_state(request.app, config)
+    _sync_download_tracker_state(request.app, config)
     request.app.state.app_config = config
     return config
 

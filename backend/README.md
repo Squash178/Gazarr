@@ -57,6 +57,7 @@ Configure the automatic download mover by setting:
 - `GAZARR_LIBRARY_DIR` – the destination folder for processed issues.
 - `GAZARR_STAGING_DIR` – optional staging area used to clean files before they land in the library.
 - Optional: `GAZARR_DOWNLOADS_POLL_INTERVAL`, `GAZARR_DOWNLOADS_SETTLE_SECONDS` to tune polling behaviour.
+- Optional: `GAZARR_DEBUG_LOGGING=true` (and the dashboard toggle) to dump detailed SABnzbd queue/history snapshots each tracker cycle.
 
 When the directories are configured the backend spawns two background tasks on startup:
 

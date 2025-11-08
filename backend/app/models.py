@@ -80,6 +80,7 @@ class AppConfig(SQLModel, table=True):
         sa_column=Column("auto_fail_hours", Float, default=720.0),
         description="Minutes before a stuck job is failed.",
     )
+    debug_logging: bool = Field(default=False, description="Enable verbose background logging.")
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

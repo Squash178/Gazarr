@@ -204,6 +204,7 @@ class AppConfigBase(BaseModel):
     auto_download_max_results: int = Field(default=1, ge=1, le=10)
     auto_fail_enabled: bool = False
     auto_fail_minutes: float = Field(default=720.0, ge=1, le=10080)
+    debug_logging: bool = False
 
 
 class AppConfigUpdate(BaseModel):
@@ -212,6 +213,7 @@ class AppConfigUpdate(BaseModel):
     auto_download_max_results: Optional[int] = Field(default=None, ge=1, le=10)
     auto_fail_enabled: Optional[bool] = None
     auto_fail_minutes: Optional[float] = Field(default=None, ge=1, le=10080)
+    debug_logging: Optional[bool] = None
 
 
 class AppConfigRead(AppConfigBase):

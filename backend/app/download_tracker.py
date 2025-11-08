@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 class TrackerConfig:
     poll_interval: float = 10.0
     history_limit: int = 50
+    debug_logging: bool = False
 
 
 class DownloadTracker:
@@ -46,9 +47,19 @@ class DownloadTracker:
         self._stop_event.clear()
         self._task = asyncio.create_task(self._run(), name="gazarr-download-tracker")
         logger.info(
-            "Started download tracker: poll=%ss history=%s",
+            "Started download tracker: poll=%ss history=%s debug=%s",
             self.config.poll_interval,
             self.config.history_limit,
+            self.config.debug_logging,
+        )
+
+    def update_config(self, config: TrackerConfig) -> None:
+        self.config = config
+        logger.info(
+            "Updated download tracker: poll=%ss history=%s debug=%s",
+            self.config.poll_interval,
+            self.config.history_limit,
+            self.config.debug_logging,
         )
 
     async def stop(self) -> None:
@@ -96,6 +107,8 @@ class DownloadTracker:
         history_items = await fetch_history(connection, limit=max(self.config.history_limit, len(queue_items) + 20))
         queue_map = {item.nzo_id: item for item in queue_items if item.nzo_id}
         history_map = {item.nzo_id: item for item in history_items if item.nzo_id}
+        if self.config.debug_logging:
+            self._log_debug_snapshot(queue_items, history_items)
 
         with Session(engine) as session:
             for job in list_active_download_jobs(session):
@@ -110,6 +123,18 @@ class DownloadTracker:
                         message = f"{queue_item.timeleft} remaining"
                     elif status == "downloading" and queue_item.timeleft:
                         message = f"{queue_item.timeleft} remaining"
+                    if self.config.debug_logging:
+                        self._log_job_update(
+                            job_id=job.id,
+                            nzo_id=nzo_id,
+                            source="queue",
+                            status=status,
+                            sab_status=queue_item.status,
+                            progress=queue_item.percentage,
+                            time_remaining=queue_item.timeleft,
+                            message=message,
+                            content=queue_item.filename,
+                        )
                     update_download_job_status(
                         session,
                         job,
@@ -128,6 +153,18 @@ class DownloadTracker:
                     message = history_item.fail_message
                     if status == "completed":
                         message = "Awaiting import into library"
+                    if self.config.debug_logging:
+                        self._log_job_update(
+                            job_id=job.id,
+                            nzo_id=nzo_id,
+                            source="history",
+                            status=status,
+                            sab_status=history_item.status,
+                            progress=100.0 if status == "completed" else job.progress,
+                            time_remaining=None,
+                            message=message,
+                            content=history_item.name,
+                        )
                     update_download_job_status(
                         session,
                         job,
@@ -138,6 +175,14 @@ class DownloadTracker:
                         message=message,
                         content_name=history_item.name,
                         completed_at=history_item.completed,
+                    )
+                elif self.config.debug_logging:
+                    logger.debug(
+                        "Download tracker could not locate SAB entry for job_id=%s nzo_id=%s title=%s status=%s",
+                        job.id,
+                        nzo_id,
+                        job.title,
+                        job.status,
                     )
             self._auto_fail_jobs(session, app_config)
 
@@ -189,3 +234,55 @@ class DownloadTracker:
                 job,
                 message=f"Auto-failed after {threshold_minutes:g}m without SABnzbd progress.",
             )
+
+    def _log_debug_snapshot(self, queue_items, history_items) -> None:
+        if queue_items:
+            for item in queue_items:
+                logger.debug(
+                    "SAB queue item: nzo_id=%s status=%s perc=%s timeleft=%s filename=%s",
+                    item.nzo_id,
+                    item.status,
+                    item.percentage,
+                    item.timeleft,
+                    item.filename,
+                )
+        else:
+            logger.debug("SAB queue empty.")
+        if history_items:
+            for item in history_items:
+                logger.debug(
+                    "SAB history item: nzo_id=%s status=%s completed=%s name=%s fail=%s",
+                    item.nzo_id,
+                    item.status,
+                    item.completed,
+                    item.name,
+                    item.fail_message,
+                )
+        else:
+            logger.debug("SAB history snapshot empty.")
+
+    @staticmethod
+    def _log_job_update(
+        *,
+        job_id: Optional[int],
+        nzo_id: Optional[str],
+        source: str,
+        status: Optional[str],
+        sab_status: Optional[str],
+        progress: Optional[float],
+        time_remaining: Optional[str],
+        message: Optional[str],
+        content: Optional[str],
+    ) -> None:
+        logger.debug(
+            "Tracker update (%s): job_id=%s nzo_id=%s status=%s sab_status=%s progress=%s time_remaining=%s message=%s content=%s",
+            source,
+            job_id,
+            nzo_id,
+            status,
+            sab_status,
+            progress,
+            time_remaining,
+            message,
+            content,
+        )

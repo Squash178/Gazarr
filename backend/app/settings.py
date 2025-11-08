@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     downloads_settle_seconds: float = Field(default=30.0, description="Time without changes before a download is considered complete.")
     download_tracker_poll_interval: float = Field(default=10.0, description="Polling interval for SABnzbd download status updates (seconds).")
     download_tracker_history_limit: int = Field(default=50, description="Number of SABnzbd history entries to inspect per poll.")
+    debug_logging: bool = Field(default=False, description="Enable verbose debug logging output.")
     auto_download_enabled: bool = Field(default=False, description="Enable the automatic downloader background task.")
     auto_download_interval: float = Field(default=900.0, description="Seconds between automatic download scans.")
     auto_download_max_results: int = Field(

@@ -185,6 +185,7 @@ export type AppConfig = {
   auto_download_max_results: number;
   auto_fail_enabled: boolean;
   auto_fail_minutes: number;
+  debug_logging: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -195,6 +196,7 @@ export type AppConfigPayload = {
   auto_download_max_results?: number | null;
   auto_fail_enabled?: boolean;
   auto_fail_minutes?: number | null;
+  debug_logging?: boolean;
 };
 
 export type ProviderCategoryOption = {

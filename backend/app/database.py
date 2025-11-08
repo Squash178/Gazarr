@@ -88,6 +88,7 @@ def _ensure_app_config_columns() -> None:
         "auto_download_max_results": "INTEGER",
         "auto_fail_enabled": "BOOLEAN",
         "auto_fail_hours": "REAL",
+        "debug_logging": "BOOLEAN",
     }
     for column, ddl_type in columns.items():
         try:

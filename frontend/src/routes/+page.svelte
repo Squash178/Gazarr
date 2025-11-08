@@ -106,7 +106,8 @@
     auto_download_interval: '',
     auto_download_max_results: '',
     auto_fail_enabled: false,
-    auto_fail_minutes: ''
+    auto_fail_minutes: '',
+    debug_logging: false
   };
 
   const parseOptionalInt = (value: string) => {
@@ -216,6 +217,7 @@
       appConfigForm.auto_download_max_results = String(appConfig.auto_download_max_results ?? '');
       appConfigForm.auto_fail_enabled = appConfig.auto_fail_enabled;
       appConfigForm.auto_fail_minutes = String(appConfig.auto_fail_minutes ?? '');
+      appConfigForm.debug_logging = appConfig.debug_logging;
     } catch (err) {
       console.error('Failed to load app config', err);
       appConfig = null;
@@ -769,7 +771,8 @@
         auto_download_interval: intervalValue !== undefined && Number.isFinite(intervalValue) ? intervalValue : undefined,
         auto_download_max_results: maxValue !== undefined && Number.isFinite(maxValue) ? maxValue : undefined,
         auto_fail_enabled: appConfigForm.auto_fail_enabled,
-        auto_fail_minutes: failMinutesValue !== undefined && Number.isFinite(failMinutesValue) ? failMinutesValue : undefined
+        auto_fail_minutes: failMinutesValue !== undefined && Number.isFinite(failMinutesValue) ? failMinutesValue : undefined,
+        debug_logging: appConfigForm.debug_logging
       };
       await withToast(
         async () => {
@@ -780,6 +783,7 @@
           appConfigForm.auto_download_max_results = String(updated.auto_download_max_results ?? '');
           appConfigForm.auto_fail_enabled = updated.auto_fail_enabled;
           appConfigForm.auto_fail_minutes = String(updated.auto_fail_minutes ?? '');
+          appConfigForm.debug_logging = updated.debug_logging;
         },
         'Auto-download settings saved'
       );
@@ -1211,6 +1215,14 @@
             />
             <small>Jobs older than this (without progress) are marked failed automatically.</small>
           </div>
+        </div>
+        <hr style="border: 0; border-top: 1px solid rgba(148, 163, 184, 0.2); margin: 1.5rem 0;" />
+        <div class="input-field">
+          <label style="display: flex; align-items: center; gap: 0.55rem;">
+            <input type="checkbox" bind:checked={appConfigForm.debug_logging} />
+            Verbose SAB debug logging
+          </label>
+          <small>Writes full queue/history snapshots and job updates into the backend logs for troubleshooting.</small>
         </div>
       {/if}
     </section>
